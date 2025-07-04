@@ -34,8 +34,8 @@ library(WasserSpectrum)
   Extends the above to **multi-group** settings ($G \geq 2$) using Fréchet mean and variance.
 
 ```r
-wasserstein\_test(df, diversity\_col = "Shannon", group\_col = "Group")
-frechet\_wasserstein\_test(df, diversity\_col = "Shannon", group\_col = "Group")
+wasserstein_test(df, diversity_col = "Shannon", group_col = "Group")
+frechet_wasserstein_test(df, diversity_col = "Shannon", group_col = "Group")
 ```
 
 ---
@@ -49,7 +49,7 @@ frechet\_wasserstein\_test(df, diversity\_col = "Shannon", group\_col = "Group")
   Extends spectrum estimation to **multi-class categorical** exposures. Supports covariate adjustment.
 
 ```r
-fit <- wasserstein\_spectrum(df, diversity\_col = "Shannon", outcome\_col = "Group")
+fit <- wasserstein_spectrum(df, diversity_col = "Shannon", outcome_col = "Group")
 plot(fit\$plot)  # Returns a ggplot object
 ```
 
@@ -67,8 +67,8 @@ plot(fit\$plot)  # Returns a ggplot object
   Tests **shape differences** in functional effect curves between groups. Can compare U-shaped vs. flat profiles.
 
 ```r
-manova\_out <- spectrum\_manova(fit)
-plot(manova\_out)  # Plot F and p curves
+manova_out <- spectrum_manova(fit)
+plot(manova_out)  # Plot F and p curves
 ```
 
 ---
@@ -85,8 +85,8 @@ plot(manova\_out)  # Plot F and p curves
   Extends `if_manova()` to handle **custom contrasts** among group-level integrals.
 
 ```r
-if\_manova(fit, a = 0.1, b = 0.9)  # Global interval test
-if\_manova\_contrast(fit, a = 0.2, b = 0.6, contrast = c(1, -1, 0))  # Group 1 vs Group 2
+if_manova(fit, a = 0.1, b = 0.9)  # Global interval test
+if_manova_contrast(fit, a = 0.2, b = 0.6, contrast = c(1, -1, 0))  # Group 1 vs Group 2
 ```
 
 ---
