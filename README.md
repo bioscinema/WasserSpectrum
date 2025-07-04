@@ -50,7 +50,7 @@ frechet_wasserstein_test(df, diversity_col = "Shannon", group_col = "Group")
 
 ```r
 fit <- wasserstein_spectrum(df, diversity_col = "Shannon", outcome_col = "Group")
-plot(fit\$plot)  # Returns a ggplot object
+plot(fit$plot)  # Returns a ggplot object
 ```
 
 ---
