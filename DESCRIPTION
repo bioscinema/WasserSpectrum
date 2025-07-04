@@ -1,0 +1,29 @@
+Package: spectrumTest
+Title: Wasserstein-Based Inference on Distributional Diversity Patterns
+Version: 0.1.0
+Description: 
+  Provides statistical tools for quantile-based inference on alpha-diversity 
+  indices in microbiome and ecological data. The package implements the Wasserstein 
+  spectrum framework for modeling diversity distributions using basis projection, 
+  enabling Wald-type and permutation tests on center, dispersion, and shape features. 
+  Functions include spectrum curve estimation, quantile-wise comparisons, Fréchet 
+  Wasserstein tests, and global/contrast-based MANOVA for group-level differences.
+  Useful for identifying complex distributional shifts beyond mean differences in 
+  microbial or ecological diversity.
+Authors@R: c(
+  person("Zihan", "Zhu", email = "zxz1586@case.edu", role = c("aut", "cre")),
+  person("Yiqian", "Zhang", email = "zhang.16383@osu.edu", role = "aut"))
+License: GPL (>= 2)
+Encoding: UTF-8
+LazyData: true
+Imports:
+  stats,
+  utils,
+  graphics,
+  ggplot2,
+  patchwork,
+  splines,
+  sandwich,
+  transport
+URL: https://github.com/bioscinema/WasserSpectrum
+RoxygenNote: 7.3.2
