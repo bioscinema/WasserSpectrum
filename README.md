@@ -18,7 +18,7 @@ Key features:
 ```r
 # install.packages("devtools")
 devtools::install_github("bioscinema/WasserSpectrum")
-library(WasserSpectrum)
+library(spectrumTest)
 ```
 
 ---
