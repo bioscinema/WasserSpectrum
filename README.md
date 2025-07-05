@@ -60,7 +60,7 @@ plot(fit$plot)  # Returns a ggplot object
 * `spectrum_manova()`
   Computes F-statistic and p-value across quantiles for multivariate Wald tests on all $\beta_k(t)$.
 
-* `plot.manova()`
+* `plot_manova()`
   Visualizes the test result from `spectrum_manova()` as F-values and $-\log_{10}(p)$ across quantiles.
 
 * `shape_contrast_test()`

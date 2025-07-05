@@ -1,0 +1,3181 @@
+---
+title: "Case_Study"
+author: "Yiqian"
+date: "2025-06-13"
+output: html_document
+---
+
+# Sources
+
+```{r}
+library(phyloseq)
+library(vegan)
+library(ggplot2)
+library(ggpubr)
+library(car)
+library(quantreg)
+library(dplyr)
+library(ggsignif)
+library(hillR)
+# devtools::install_github("bioscinema/WasserSpectrum")
+library(spectrumTest)
+```
+
+
+# CVD
+
+```{r}
+load("./Real Data/cardiovascular_wgs.RData")
+meta <- as(sample_data(ps),"data.frame")
+meta$SampleID <- rownames(meta)
+
+meta <- meta %>%
+  filter(grepl("^MMC", Status) | grepl("^HC", Status) | grepl("^IHD", Status)) %>%
+  mutate(Status = ifelse(grepl("^MMC", Status), "MMC",
+                         ifelse(grepl("^HC", Status), "HC", 
+                                ifelse(grepl("^IHD", Status), "IHD", NA))))
+
+meta <- meta %>%
+  mutate(HbA1c.... = ifelse(HbA1c.... == "NA", NA, HbA1c....)) %>% 
+  filter(!is.na(HbA1c....)) %>%
+  mutate(HbA1c = as.numeric(HbA1c....))
+
+meta <- meta %>%
+  filter(Gender %in% c("Female", "Male"))
+
+ps_filt <- prune_samples(meta$SampleID, ps)
+sample_data(ps_filt) <- sample_data(meta)
+ps_filt <- prune_taxa(taxa_sums(ps_filt) > 0, ps_filt)
+
+ps_filt@sam_data$Age = ps_filt@sam_data$Age..years.
+```
+
+
+## Shannon
+
+```{r}
+shannon_vec <- vegan::diversity(t(otu_table(ps_filt)), index = "shannon")
+
+# Get levels of Status
+status_levels <- unique(sample_data(ps_filt)$Status)
+
+# Store results in a named list
+shannon_by_status <- setNames(vector("list", length(status_levels)), status_levels)
+
+# Loop through each Status group
+for (s in status_levels) {
+  ps_sub <- subset_samples(ps_filt, Status == s)
+  shannon_by_status[[s]] <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+}
+
+```
+
+
+### Part 1: Three Group Comparison (traditional analysis)
+
+```{r, warning=FALSE}
+meta_df <- data.frame(sample_data(ps_filt))
+meta_df$SampleID <- rownames(meta_df)
+meta_df$Shannon <- shannon_vec[meta_df$SampleID]
+meta_df$Depth <- colSums(otu_table(ps_filt))
+
+kruskal_res <- kruskal.test(Shannon ~ Status, data = meta_df)
+p_val <- format.pval(kruskal_res$p.value, digits = 4, eps = .0001)
+
+ggplot(meta_df, aes(x = Status, y = Shannon, fill = Status)) +
+  geom_violin(trim = FALSE, alpha = 0.5) +
+  geom_jitter(width = 0.15, size = 1, alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Alpha Diversity by Group (Shannon Index)",
+    y = "Shannon Index",
+    x = "Status"
+  ) +
+  annotate("text", x = 1.5, y = max(meta_df$Shannon) * 1.05,
+           label = paste0("Kruskal-Wallis p = ", p_val), size = 4.5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none"
+  )
+
+frechet_wasserstein_test(meta_df, 
+                         "Shannon", 
+                         "Status", 
+                         nperm = 1000, 
+                         plot = TRUE,
+                         seed = 123)
+
+```
+
+### Part 2: Wasserstein Spectrum of HbA1c
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+print(status_levels)
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+
+
+```
+
+
+### Part 3: Wasserstein Spectrum of Status
+
+```{r, warning=FALSE}
+Status.ws <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws$plot
+
+Status.MANOVA <- spectrum_manova(Status.ws)
+
+plot.manova(manova_df = Status.MANOVA,
+            type = "both",
+            p_cutoff = 0.05,
+            line_color = "darkblue",
+            ribbon_color = "lightblue",
+            title = "Quantile-wise MANOVA",
+            base_size = 14)
+
+### adjust sequencing depth
+
+Status.ws2 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws2$plot
+
+### adjust sequencing depth and other covariates
+
+Status.ws3 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = c("Depth","Age","HbA1c","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws3$plot
+
+
+```
+
+### Part 4: Wasserstein Spectrum of BMI
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$BMI..kg.m.. <- as.numeric(meta$BMI..kg.m..)
+  meta <- meta[!is.na(meta$BMI..kg.m..), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+
+
+
+```
+
+### Part 5: Wasserstein Spectrum of Waist.circumference
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Waist.circumference..cm. <- as.numeric(meta$Waist.circumference..cm.)
+  meta <- meta[!is.na(meta$Waist.circumference..cm.), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Waist.circumference..cm.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Waist.circumference..cm.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Waist.circumference..cm.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+
+
+```
+
+### Part 6: Wasserstein Spectrum of Fasting.plasma.CRP
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.CRP..mg.L. <- as.numeric(meta$Fasting.plasma.CRP..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.CRP..mg.L.), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.CRP..mg.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.CRP..mg.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.CRP..mg.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+```
+
+
+### Part 7: Wasserstein Spectrum of pro.ANP
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.pro.ANP..pmol.L. <- as.numeric(meta$Fasting.plasma.pro.ANP..pmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.pro.ANP..pmol.L.), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+
+```
+
+### Part 8: Wasserstein Spectrum of SBP
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Systolic.blood.pressure..mmHg. <- as.numeric(meta$Systolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Systolic.blood.pressure..mmHg.), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+
+
+```
+
+### Part 9: Wasserstein Spectrum of DBP
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Diastolic.blood.pressure..mmHg. <- as.numeric(meta$Diastolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Diastolic.blood.pressure..mmHg.), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+```
+
+### Part 10: Wasserstein Spectrum of Left.ventricular
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Left.ventricular.ejection.fraction.... <- as.numeric(meta$Left.ventricular.ejection.fraction....)
+  meta <- meta[!is.na(meta$Left.ventricular.ejection.fraction....), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+```
+
+### Part 11: Wasserstein Spectrum of adiponectin
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.adiponectin..mg.L. <- as.numeric(meta$Fasting.plasma.adiponectin..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.adiponectin..mg.L.), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+
+```
+
+
+### Part 12: Wasserstein Spectrum of triglycerides
+```{r, warning=FALSE}
+shannon_by_status <- list()
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq first
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Compute Shannon for this subset
+  shannon_vec <- vegan::diversity(t(otu_table(ps_sub)), index = "shannon")
+  
+  # Save to meta_df for wasserstein analysis
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- shannon_vec
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.triglycerides..mmol.L. <- as.numeric(meta$Fasting.plasma.triglycerides..mmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.triglycerides..mmol.L.), ]
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  diversity_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+})
+
+
+```
+
+
+
+## Faith's PD
+
+```{r}
+tree = phy_tree(ps_filt)
+shannon_vec <- setNames(picante::pd(t(otu_table(ps_filt)), tree, include.root = TRUE)$PD, rownames(t(otu_table(ps_filt))))
+```
+
+### Part 1: Three Group Comparison (traditional analysis)
+
+```{r}
+meta_df <- data.frame(sample_data(ps_filt))
+meta_df$SampleID <- rownames(meta_df)
+meta_df$Shannon <- shannon_vec[meta_df$SampleID]
+meta_df$Depth <- colSums(otu_table(ps_filt))
+
+kruskal_res <- kruskal.test(Shannon ~ Status, data = meta_df)
+p_val <- format.pval(kruskal_res$p.value, digits = 4, eps = .0001)
+
+ggplot(meta_df, aes(x = Status, y = Shannon, fill = Status)) +
+  geom_violin(trim = FALSE, alpha = 0.5) +
+  geom_jitter(width = 0.15, size = 1, alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Alpha Diversity by Group (Shannon Index)",
+    y = "Shannon Index",
+    x = "Status"
+  ) +
+  annotate("text", x = 1.5, y = max(meta_df$Shannon) * 1.05,
+           label = paste0("Kruskal-Wallis p = ", p_val), size = 4.5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none"
+  )
+
+frechet_wasserstein_test(meta_df, 
+                         "Shannon", 
+                         "Status", 
+                         nperm = 1000, 
+                         plot = TRUE,
+                         seed = 123)
+
+```
+
+### Part 2: Wasserstein Spectrum of HbA1c
+```{r}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$HbA1c <- as.numeric(meta$HbA1c)
+  meta <- meta[!is.na(meta$HbA1c), ]
+
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+```
+
+
+### Part 3: Wasserstein Spectrum of Status
+
+```{r}
+Status.ws <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws$plot
+
+Status.MANOVA <- spectrum_manova(Status.ws)
+
+plot.manova(manova_df = Status.MANOVA,
+            type = "both",
+            p_cutoff = 0.05,
+            line_color = "darkblue",
+            ribbon_color = "lightblue",
+            title = "Quantile-wise MANOVA",
+            base_size = 14)
+
+### adjust sequencing depth
+
+Status.ws2 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws2$plot
+
+### adjust sequencing depth and other covariates
+
+Status.ws3 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = c("Depth","Age","HbA1c","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws3$plot
+
+
+```
+
+### Part 4: Wasserstein Spectrum of BMI
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$BMI..kg.m.. <- as.numeric(meta$BMI..kg.m..)
+  meta <- meta[!is.na(meta$BMI..kg.m..), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+
+
+
+
+```
+
+### Part 5: Wasserstein Spectrum of Waist.circumference
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Waist.circumference..cm. <- as.numeric(meta$Waist.circumference..cm.)
+  meta <- meta[!is.na(meta$Waist.circumference..cm.), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+
+
+
+```
+
+### Part 6: Wasserstein Spectrum of Fasting.plasma.CRP
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.CRP..mg.L. <- as.numeric(meta$Fasting.plasma.CRP..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.CRP..mg.L.), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+```
+
+
+### Part 7: Wasserstein Spectrum of pro.ANP
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.pro.ANP..pmol.L. <- as.numeric(meta$Fasting.plasma.pro.ANP..pmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.pro.ANP..pmol.L.), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+```
+
+### Part 8: Wasserstein Spectrum of SBP
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Systolic.blood.pressure..mmHg. <- as.numeric(meta$Systolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Systolic.blood.pressure..mmHg.), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+```
+
+### Part 9: Wasserstein Spectrum of DBP
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Diastolic.blood.pressure..mmHg. <- as.numeric(meta$Diastolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Diastolic.blood.pressure..mmHg.), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+```
+
+### Part 10: Wasserstein Spectrum of Left.ventricular
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Left.ventricular.ejection.fraction.... <- as.numeric(meta$Left.ventricular.ejection.fraction....)
+  meta <- meta[!is.na(meta$Left.ventricular.ejection.fraction....), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+```
+
+### Part 11: Wasserstein Spectrum of adiponectin
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.adiponectin..mg.L. <- as.numeric(meta$Fasting.plasma.adiponectin..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.adiponectin..mg.L.), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+
+```
+
+
+### Part 12: Wasserstein Spectrum of triglycerides
+```{r, warning=FALSE}
+status_levels <- unique(sample_data(ps_filt)$Status)
+tree <- phy_tree(ps_filt)
+meta_by_status <- list()
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+
+  # Faith's PD (samples as rows → transpose first)
+  pd_out <- picante::pd(t(otu_table(ps_sub)), tree, include.root = TRUE)
+  pd_vec <- setNames(pd_out$PD, rownames(pd_out))  # Named vector for Faith's PD
+
+  # Get metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  meta$Shannon <- pd_vec[rownames(meta)]  # assign PD to Shannon column
+  meta$Depth <- colSums(otu_table(ps_sub))  # or rowSums if samples are rows
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.triglycerides..mmol.L. <- as.numeric(meta$Fasting.plasma.triglycerides..mmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.triglycerides..mmol.L.), ]
+  
+  # Store
+  meta_by_status[[st]] <- meta
+}
+
+# Run wasserstein spectrum models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+})
+
+```
+
+## Chao1
+
+```{r}
+shannon_vec <- setNames(apply(t(otu_table(ps_filt)), 1, function(x) vegan::estimateR(x)["S.chao1"]), rownames(t(otu_table(ps_filt))))
+```
+
+### Part 1: Three Group Comparison (traditional analysis)
+
+```{r}
+meta_df <- data.frame(sample_data(ps_filt))
+meta_df$SampleID <- rownames(meta_df)
+meta_df$Shannon <- shannon_vec[meta_df$SampleID]
+meta_df$Depth <- colSums(otu_table(ps_filt))
+
+kruskal_res <- kruskal.test(Shannon ~ Status, data = meta_df)
+p_val <- format.pval(kruskal_res$p.value, digits = 4, eps = .0001)
+
+ggplot(meta_df, aes(x = Status, y = Shannon, fill = Status)) +
+  geom_violin(trim = FALSE, alpha = 0.5) +
+  geom_jitter(width = 0.15, size = 1, alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Alpha Diversity by Group (Shannon Index)",
+    y = "Shannon Index",
+    x = "Status"
+  ) +
+  annotate("text", x = 1.5, y = max(meta_df$Shannon) * 1.05,
+           label = paste0("Kruskal-Wallis p = ", p_val), size = 4.5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none"
+  )
+
+frechet_wasserstein_test(meta_df, 
+                         "Shannon", 
+                         "Status", 
+                         nperm = 1000, 
+                         plot = TRUE,
+                         seed = 123)
+
+```
+
+### Part 2: Wasserstein Spectrum of HbA1c
+```{r}
+status_levels <- unique(sample_data(ps_filt)$Status)
+meta_by_status <- list()
+
+# Precompute Chao1
+chao1_vec <- setNames(
+  apply(t(otu_table(ps_filt)), 1, function(x) vegan::estimateR(x)["S.chao1"]),
+  rownames(t(otu_table(ps_filt)))
+)
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$HbA1c <- as.numeric(meta$HbA1c)
+  meta <- meta[!is.na(meta$HbA1c), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+
+### Part 3: Wasserstein Spectrum of Status
+
+```{r}
+Status.ws <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws$plot
+
+Status.MANOVA <- spectrum_manova(Status.ws)
+
+plot.manova(manova_df = Status.MANOVA,
+            type = "both",
+            p_cutoff = 0.05,
+            line_color = "darkblue",
+            ribbon_color = "lightblue",
+            title = "Quantile-wise MANOVA",
+            base_size = 14)
+
+### adjust sequencing depth
+
+Status.ws2 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws2$plot
+
+### adjust sequencing depth and other covariates
+
+Status.ws3 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = c("Depth","Age","HbA1c","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws3$plot
+
+
+```
+
+### Part 4: Wasserstein Spectrum of BMI
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$BMI..kg.m.. <- as.numeric(meta$BMI..kg.m..)
+  meta <- meta[!is.na(meta$BMI..kg.m..), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+```
+
+### Part 5: Wasserstein Spectrum of Waist.circumference
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Waist.circumference..cm. <- as.numeric(meta$Waist.circumference..cm.)
+  meta <- meta[!is.na(meta$Waist.circumference..cm.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+```
+
+### Part 6: Wasserstein Spectrum of Fasting.plasma.CRP
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.CRP..mg.L. <- as.numeric(meta$Fasting.plasma.CRP..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.CRP..mg.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+
+### Part 7: Wasserstein Spectrum of pro.ANP
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.pro.ANP..pmol.L. <- as.numeric(meta$Fasting.plasma.pro.ANP..pmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.pro.ANP..pmol.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+
+```
+
+### Part 8: Wasserstein Spectrum of SBP
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Systolic.blood.pressure..mmHg. <- as.numeric(meta$Systolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Systolic.blood.pressure..mmHg.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+
+```
+
+### Part 9: Wasserstein Spectrum of DBP
+```{r, warning=FALSE}
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Diastolic.blood.pressure..mmHg. <- as.numeric(meta$Diastolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Diastolic.blood.pressure..mmHg.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+### Part 10: Wasserstein Spectrum of Left.ventricular
+```{r, warning=FALSE}
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Left.ventricular.ejection.fraction.... <- as.numeric(meta$Left.ventricular.ejection.fraction....)
+  meta <- meta[!is.na(meta$Left.ventricular.ejection.fraction....), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+### Part 11: Wasserstein Spectrum of adiponectin
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.adiponectin..mg.L. <- as.numeric(meta$Fasting.plasma.adiponectin..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.adiponectin..mg.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+
+### Part 12: Wasserstein Spectrum of triglycerides
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.triglycerides..mmol.L. <- as.numeric(meta$Fasting.plasma.triglycerides..mmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.triglycerides..mmol.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+## q-PD (q=1)
+
+```{r}
+tree = phy_tree(ps_filt)
+shannon_vec <-  hill_phylo(comm = t(otu_table(ps_filt)), tree = tree, q = 1, rel_then_pool = FALSE)
+```
+
+### Part 1: Three Group Comparison (traditional analysis)
+
+```{r}
+meta_df <- data.frame(sample_data(ps_filt))
+meta_df$SampleID <- rownames(meta_df)
+meta_df$Shannon <- shannon_vec[meta_df$SampleID]
+meta_df$Depth <- colSums(otu_table(ps_filt))
+
+kruskal_res <- kruskal.test(Shannon ~ Status, data = meta_df)
+p_val <- format.pval(kruskal_res$p.value, digits = 4, eps = .0001)
+
+ggplot(meta_df, aes(x = Status, y = Shannon, fill = Status)) +
+  geom_violin(trim = FALSE, alpha = 0.5) +
+  geom_jitter(width = 0.15, size = 1, alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Alpha Diversity by Group (Shannon Index)",
+    y = "Shannon Index",
+    x = "Status"
+  ) +
+  annotate("text", x = 1.5, y = max(meta_df$Shannon) * 1.05,
+           label = paste0("Kruskal-Wallis p = ", p_val), size = 4.5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none"
+  )
+
+frechet_wasserstein_test(meta_df, 
+                         "Shannon", 
+                         "Status", 
+                         nperm = 1000, 
+                         plot = TRUE,
+                         seed = 123)
+
+```
+
+### Part 2: Wasserstein Spectrum of HbA1c
+```{r}
+status_levels <- unique(sample_data(ps_filt)$Status)
+meta_by_status <- list()
+
+# Precompute Chao1
+chao1_vec <- hill_phylo(comm = t(otu_table(ps_filt)), tree = tree, q = 1, rel_then_pool = FALSE)
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$HbA1c <- as.numeric(meta$HbA1c)
+  meta <- meta[!is.na(meta$HbA1c), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+
+### Part 3: Wasserstein Spectrum of Status
+
+```{r}
+Status.ws <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws$plot
+
+Status.MANOVA <- spectrum_manova(Status.ws)
+
+plot.manova(manova_df = Status.MANOVA,
+            type = "both",
+            p_cutoff = 0.05,
+            line_color = "darkblue",
+            ribbon_color = "lightblue",
+            title = "Quantile-wise MANOVA",
+            base_size = 14)
+
+### adjust sequencing depth
+
+Status.ws2 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws2$plot
+
+### adjust sequencing depth and other covariates
+
+Status.ws3 <- wasserstein_spectrum_multiclass(
+  df = meta_df,
+  diversity_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = c("Depth","Age","HbA1c","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+
+Status.ws3$plot
+
+
+```
+
+### Part 4: Wasserstein Spectrum of BMI
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$BMI..kg.m.. <- as.numeric(meta$BMI..kg.m..)
+  meta <- meta[!is.na(meta$BMI..kg.m..), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+```
+
+### Part 5: Wasserstein Spectrum of Waist.circumference
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Waist.circumference..cm. <- as.numeric(meta$Waist.circumference..cm.)
+  meta <- meta[!is.na(meta$Waist.circumference..cm.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Waist.circumference..cm.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+```
+
+### Part 6: Wasserstein Spectrum of Fasting.plasma.CRP
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.CRP..mg.L. <- as.numeric(meta$Fasting.plasma.CRP..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.CRP..mg.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.CRP..mg.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+
+### Part 7: Wasserstein Spectrum of pro.ANP
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.pro.ANP..pmol.L. <- as.numeric(meta$Fasting.plasma.pro.ANP..pmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.pro.ANP..pmol.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+
+```
+
+### Part 8: Wasserstein Spectrum of SBP
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Systolic.blood.pressure..mmHg. <- as.numeric(meta$Systolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Systolic.blood.pressure..mmHg.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Systolic.blood.pressure..mmHg.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+
+```
+
+### Part 9: Wasserstein Spectrum of DBP
+```{r, warning=FALSE}
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Diastolic.blood.pressure..mmHg. <- as.numeric(meta$Diastolic.blood.pressure..mmHg.)
+  meta <- meta[!is.na(meta$Diastolic.blood.pressure..mmHg.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Diastolic.blood.pressure..mmHg.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+### Part 10: Wasserstein Spectrum of Left.ventricular
+```{r, warning=FALSE}
+
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Left.ventricular.ejection.fraction.... <- as.numeric(meta$Left.ventricular.ejection.fraction....)
+  meta <- meta[!is.na(meta$Left.ventricular.ejection.fraction....), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Left.ventricular.ejection.fraction....", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+### Part 11: Wasserstein Spectrum of adiponectin
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.adiponectin..mg.L. <- as.numeric(meta$Fasting.plasma.adiponectin..mg.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.adiponectin..mg.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+
+### Part 12: Wasserstein Spectrum of triglycerides
+```{r, warning=FALSE}
+for (st in status_levels) {
+  # Subset phyloseq
+  ps_sub <- subset_samples(ps_filt, Status == st)
+  
+  # Sample metadata
+  meta <- as.data.frame(sample_data(ps_sub))
+  
+  # Assign Chao1 richness
+  meta$Shannon <- chao1_vec[rownames(meta)]  # storing in 'Shannon' column for modeling
+  meta$Depth <- colSums(otu_table(ps_sub))
+  meta$SampleID <- rownames(meta)
+  meta$Fasting.plasma.triglycerides..mmol.L. <- as.numeric(meta$Fasting.plasma.triglycerides..mmol.L.)
+  meta <- meta[!is.na(meta$Fasting.plasma.triglycerides..mmol.L.), ]
+  
+  meta_by_status[[st]] <- meta
+}
+
+# Run Wasserstein spectrum GLS models
+ws_list <- lapply(meta_by_status, function(df_sub) {
+  HbA1c.ws <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+
+  HbA1c.ws2 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = "Depth",
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+  HbA1c.ws3 <- wasserstein_spectrum(
+    df = df_sub, 
+    diversity_col = "Shannon", 
+    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+    confounder_cols = c("Depth", "Age", "Gender"),
+    basis_df = 6,
+    t_grid = seq(0.01, 0.99, length.out = 100),
+    alpha = 0.05,
+    plot = TRUE,
+    seed = 123
+  )
+
+})
+
+```
+
+

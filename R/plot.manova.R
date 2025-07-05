@@ -27,13 +27,13 @@
 #' @examples
 #' \dontrun{
 #' manova_result <- spectrum_manova(fit)
-#' plot.manova(manova_result, type = "both", p_cutoff = 0.01)
+#' plot_manova(manova_result, type = "both", p_cutoff = 0.01)
 #' }
 #'
 #' @importFrom ggplot2 ggplot aes geom_line labs theme_minimal geom_hline
 #' @importFrom patchwork plot_layout
 #' @export
-plot.manova <- function(manova_df,
+plot_manova <- function(manova_df,
                         type = c("both", "F", "p"),
                         p_cutoff = 0.05,
                         line_color = "darkblue",
