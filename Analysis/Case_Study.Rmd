@@ -3179,3 +3179,90 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 ```
 
 
+## OTU Level
+
+### limma-voom
+
+```{r}
+library(edgeR)
+library(limma)
+```
+
+```{r}
+count_data <- as(otu_table(ps_filt), "matrix")
+if (!taxa_are_rows(ps_filt)) {
+  count_data <- t(count_data)  
+}
+
+metadata <- data.frame(
+  sample_id = sample_names(ps_filt),
+  BMI = as.numeric(sample_data(ps_filt)[["BMI..kg.m.."]])
+)
+
+valid_idx <- !is.na(metadata$BMI)
+metadata_clean <- metadata[valid_idx, ]
+
+count_data_clean <- count_data[, valid_idx]
+
+dge <- DGEList(counts = count_data_clean)
+dge <- calcNormFactors(dge)
+design <- model.matrix(~ BMI, data = metadata_clean)
+v <- voom(dge, design, plot = TRUE) 
+fit <- lmFit(v, design)
+fit <- eBayes(fit)
+# Test for BMI effect (coefficient named "BMI")
+results <- topTable(fit, coef = "BMI", number = Inf)
+
+# View top hits
+head(results)
+# Adjusted p-value cutoff
+sig_results <- results[results$adj.P.Val < 0.05, ]
+
+```
+
+### wasserstein_spectrum
+
+#### G000436255(p = 1.637873e-18)
+
+```{r}
+TSS_data <- sweep(count_data_clean, 2, colSums(count_data_clean), FUN = "/")
+
+
+df_otu <- data.frame(
+  Count = count_data_clean["G000436255", ],
+  BMI = metadata_clean$BMI,
+  TSS = TSS_data["G000436255", ]
+)
+wasserstein_spectrum(
+  df = df_otu, 
+  diversity_col = "Count", 
+  outcome_col = "BMI", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+```
+
+### G000372285 (p = 4.246911e-03)
+```{r}
+df_otu <- data.frame(
+  Count = count_data_clean["G000372285", ],
+  BMI = metadata_clean$BMI,
+  TSS = TSS_data["G000372285", ]
+)
+wasserstein_spectrum(
+  df = df_otu, 
+  diversity_col = "Count", 
+  outcome_col = "BMI", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+```
+

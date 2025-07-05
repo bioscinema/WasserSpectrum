@@ -86,7 +86,7 @@ wasserstein_spectrum_multiclass <- function(df,
   
   # Binary outcomes across quantiles
   quantile_thresholds <- quantile(y, probs = t_grid, type = 8)
-  y_bin_mat <- outer(y, quantile_thresholds, FUN = "<=") * 1  # n x m
+  y_bin_mat <- outer(y, quantile_thresholds, FUN = ">") * 1  # n x m
   
   # Spline basis on quantile grid
   Phi <- bs(t_grid, df = basis_df, intercept = TRUE)  # m x K
