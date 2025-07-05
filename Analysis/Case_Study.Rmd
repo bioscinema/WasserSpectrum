@@ -198,7 +198,7 @@ Status.ws$plot
 
 Status.MANOVA <- spectrum_manova(Status.ws)
 
-plot.manova(manova_df = Status.MANOVA,
+plot_manova(manova_df = Status.MANOVA,
             type = "both",
             p_cutoff = 0.05,
             line_color = "darkblue",
@@ -1002,7 +1002,7 @@ Status.ws$plot
 
 Status.MANOVA <- spectrum_manova(Status.ws)
 
-plot.manova(manova_df = Status.MANOVA,
+plot_manova(manova_df = Status.MANOVA,
             type = "both",
             p_cutoff = 0.05,
             line_color = "darkblue",
@@ -1813,7 +1813,7 @@ Status.ws$plot
 
 Status.MANOVA <- spectrum_manova(Status.ws)
 
-plot.manova(manova_df = Status.MANOVA,
+plot_manova(manova_df = Status.MANOVA,
             type = "both",
             p_cutoff = 0.05,
             line_color = "darkblue",
@@ -2562,7 +2562,7 @@ Status.ws$plot
 
 Status.MANOVA <- spectrum_manova(Status.ws)
 
-plot.manova(manova_df = Status.MANOVA,
+plot_manova(manova_df = Status.MANOVA,
             type = "both",
             p_cutoff = 0.05,
             line_color = "darkblue",
