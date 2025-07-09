@@ -60,7 +60,7 @@ plot(fit$plot)  # Returns a ggplot object
 * `wasserstein_quantile_cluster()`
   Performs quantile-wise inference on each taxon (OTU) using a B-spline projection of the outcome effect curve $\beta(t)$.
   Aggregates quantile-wise p-values using Cauchy combination (with optional adaptive version).
-If desired, significant OTUs are clustered based on the L1 distance of their quantile effect profiles using PAM.
+
 
 ```r
 wasserstein_quantile_cluster(
@@ -68,8 +68,7 @@ wasserstein_quantile_cluster(
   metadata = metadata,
   outcome_col = "BMI",
   confounder_cols = c("Age", "Gender"),
-  adaptive = FALSE,
-  cluster = TRUE
+  adaptive = FALSE
 )
 ```
 
