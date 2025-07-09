@@ -18,7 +18,7 @@ Key features:
 ```r
 # install.packages("devtools")
 devtools::install_github("bioscinema/WasserSpectrum")
-library(spectrumTest)
+library(WasserSpectrum)
 ```
 
 ---
@@ -51,6 +51,26 @@ frechet_wasserstein_test(df, diversity_col = "Shannon", group_col = "Group")
 ```r
 fit <- wasserstein_spectrum(df, diversity_col = "Shannon", outcome_col = "Group")
 plot(fit$plot)  # Returns a ggplot object
+```
+
+---
+
+### 2b. Quantile-Based Inference with OTU Clustering
+
+* `wasserstein_quantile_cluster()`
+  Performs quantile-wise inference on each taxon (OTU) using a B-spline projection of the outcome effect curve $\beta(t)$.
+  Aggregates quantile-wise p-values using Cauchy combination (with optional adaptive version).
+If desired, significant OTUs are clustered based on the L1 distance of their quantile effect profiles using PAM.
+
+```r
+wasserstein_quantile_cluster(
+  df = t(count_data),  # function expects taxa in columns, samples in rows
+  metadata = metadata,
+  outcome_col = "BMI",
+  confounder_cols = c("Age", "Gender"),
+  adaptive = FALSE,
+  cluster = TRUE
+)
 ```
 
 ---

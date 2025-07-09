@@ -17,13 +17,20 @@ License: GPL (>= 2)
 Encoding: UTF-8
 LazyData: true
 Imports:
-  stats,
-  utils,
-  graphics,
-  ggplot2,
-  patchwork,
-  splines,
-  sandwich,
-  transport
+    stats,
+    utils,
+    graphics,
+    ggplot2,
+    patchwork,
+    splines,
+    sandwich,
+    transport,
+    Rcpp,
+    progressr,
+    pbapply,
+    fpc,
+    cluster
 URL: https://github.com/bioscinema/WasserSpectrum
 RoxygenNote: 7.3.2
+LinkingTo: 
+    Rcpp, RcppEigen, RcppProgress
