@@ -2,7 +2,7 @@
 % Please edit documentation in R/wasserstein_quantile_cluster.R
 \name{wasserstein_quantile_cluster}
 \alias{wasserstein_quantile_cluster}
-\title{Wasserstein Quantile-Based Inference and Clustering for Microbiome Data}
+\title{Wasserstein Quantile-Based Inference for Microbiome Data}
 \usage{
 wasserstein_quantile_cluster(
   df,
@@ -12,7 +12,6 @@ wasserstein_quantile_cluster(
   basis_df = 6,
   t_grid = seq(0.01, 0.99, length.out = 100),
   adaptive = FALSE,
-  cluster = FALSE,
   seed = 123
 )
 }
@@ -31,8 +30,6 @@ wasserstein_quantile_cluster(
 
 \item{adaptive}{Logical. If TRUE, applies adaptive Cauchy combination (default = FALSE).}
 
-\item{cluster}{Logical. If TRUE, clusters significant taxa using L1 distance and PAM (default = FALSE).}
-
 \item{seed}{Integer for reproducibility (default = 123).}
 }
 \value{
@@ -41,15 +38,12 @@ A data frame with one row per taxon and columns:
   \item{OTU}{The taxon name (i.e., column name from `df`).}
   \item{p_value}{Cauchy-combined global p-value testing association with the outcome.}
   \item{adj_p_value}{Bonferroni-adjusted p-value.}
-  \item{Cluster}{Cluster assignment (if `cluster = TRUE`).}
-  \item{IsMedoid}{TRUE if taxon is a medoid within its cluster (if `cluster = TRUE`).}
 }
 }
 \description{
 This function performs quantile-based inference on each taxon using the Wasserstein spectrum framework.
 It estimates the effect of a continuous or binary outcome on taxon abundance across quantiles using basis projection,
 computes Wald-type test statistics, and aggregates p-values via (adaptive) Cauchy combination.
-Optionally, it clusters significant taxa based on the similarity of their effect curves.
 The function leverages C++ acceleration for efficiency.
 }
 \details{
@@ -57,18 +51,14 @@ Internally, for each taxon, a series of binary outcomes is constructed across qu
 and a linear model is fit with B-spline basis and covariate design via Kronecker product.
 The coefficient of interest (associated with the outcome) is extracted across quantiles,
 and test statistics are computed using heteroskedasticity-consistent covariance estimates (HC1).
-
-If clustering is enabled, taxa with significant adjusted p-values (< 0.05) are clustered
-using L1 distance on effect curves and partitioned using `pamk()` from `fpc`.
 }
 \examples{
 \dontrun{
 result <- wasserstein_quantile_cluster(
-  df = t(count_data),
+  df = t(count_data),  # taxa as columns, samples as rows
   metadata = metadata,
   outcome_col = "BMI",
-  confounder_cols = c("Age", "Gender"),
-  cluster = TRUE
+  confounder_cols = c("Age", "Gender")
 )
 }
 

@@ -25,21 +25,9 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// compute_l1_dist_matrix
-NumericMatrix compute_l1_dist_matrix(NumericMatrix M);
-RcppExport SEXP _WasserSpectrum_compute_l1_dist_matrix(SEXP MSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< NumericMatrix >::type M(MSEXP);
-    rcpp_result_gen = Rcpp::wrap(compute_l1_dist_matrix(M));
-    return rcpp_result_gen;
-END_RCPP
-}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_WasserSpectrum_compute_beta1_se", (DL_FUNC) &_WasserSpectrum_compute_beta1_se, 4},
-    {"_WasserSpectrum_compute_l1_dist_matrix", (DL_FUNC) &_WasserSpectrum_compute_l1_dist_matrix, 1},
     {NULL, NULL, 0}
 };
 

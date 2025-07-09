@@ -34,25 +34,3 @@ List compute_beta1_se(NumericMatrix Phi,
   );
 }
 
-
-
-
-// [[Rcpp::export]]
-NumericMatrix compute_l1_dist_matrix(NumericMatrix M) {
-  int K = M.nrow();
-  int n = M.ncol();
-  NumericMatrix D(n, n);
-  
-  for (int i = 0; i < n - 1; ++i) {
-    for (int j = i + 1; j < n; ++j) {
-      double dist = 0.0;
-      for (int k = 0; k < K; ++k) {
-        dist += std::abs(M(k, i) - M(k, j));
-      }
-      dist /= K;
-      D(i, j) = D(j, i) = dist;
-    }
-  }
-  
-  return D;
-}

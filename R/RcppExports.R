@@ -5,7 +5,3 @@ compute_beta1_se <- function(Phi, coef, cov_matrix, sel_idx) {
     .Call(`_WasserSpectrum_compute_beta1_se`, Phi, coef, cov_matrix, sel_idx)
 }
 
-compute_l1_dist_matrix <- function(M) {
-    .Call(`_WasserSpectrum_compute_l1_dist_matrix`, M)
-}
-
