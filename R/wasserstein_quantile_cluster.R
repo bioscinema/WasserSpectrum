@@ -165,7 +165,7 @@ wasserstein_quantile_cluster <- function(df,
   colnames(dist_mat) <- rownames(dist_mat) <- sig_otus
   dist_obj <- as.dist(dist_mat)
   
-  pamk_result <- pamk(as.matrix(dist_obj), krange = 2:min(10, n), usepam = TRUE)
+  pamk_result <- pamk(as.matrix(dist_obj), krange = 2:min(10, length(sig_otus)), usepam = TRUE)
   k <- pamk_result$nc
   pam_result <- pam(dist_obj, k = k, diss = TRUE)
   cluster_labels <- pam_result$clustering
