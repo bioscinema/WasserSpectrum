@@ -29,7 +29,8 @@ Imports:
     progressr,
     pbapply,
     fpc,
-    cluster
+    cluster,
+    pracma
 URL: https://github.com/bioscinema/WasserSpectrum
 RoxygenNote: 7.3.2
 LinkingTo: 
