@@ -1,12 +1,3 @@
-#' @useDynLib WasserSpectrum, .registration = TRUE
-#' @importFrom Rcpp sourceCpp
-#' @importFrom splines bs
-#' @importFrom sandwich vcovHC
-#' @importFrom stats pnorm quantile model.matrix lm coef residuals p.adjust
-#' @importFrom pbapply pblapply
-#' @importFrom pracma trapz
-NULL
-
 #' Wasserstein Quantile-Based Inference for Microbiome Data
 #'
 #' This function performs quantile-based inference on each feature (e.g., taxon) using the Wasserstein spectrum framework.
@@ -32,6 +23,11 @@ NULL
 #'   \item{adj_p_value}{Bonferroni-adjusted p-value.}
 #' }
 #'
+#' @importFrom splines bs
+#' @importFrom sandwich vcovHC
+#' @importFrom stats pnorm quantile model.matrix lm coef residuals p.adjust
+#' @importFrom pbapply pblapply
+#' @importFrom pracma trapz
 #' @export
 wasserstein_quantile_test <- function(df,
                                       metadata,
@@ -44,81 +40,112 @@ wasserstein_quantile_test <- function(df,
   set.seed(seed)
   
   otus <- colnames(df)
+  
+  safe_run <- function(otu) {
+    tryCatch(
+      wasserstein_quantile_single(
+        df = df,
+        feature_col = otu,
+        metadata = metadata,
+        outcome_col = outcome_col,
+        confounder_cols = confounder_cols,
+        basis_df = basis_df,
+        t_grid = t_grid,
+        adaptive = adaptive
+      ),
+      error = function(e) NULL
+    )
+  }
+  
+  out_list <- if (.Platform$OS.type == "unix") {
+    parallel::mclapply(otus, safe_run, mc.cores = parallel::detectCores())
+  } else {
+    pbapply::pblapply(otus, safe_run)
+  }
+  
+  out_list <- Filter(Negate(is.null), out_list)
+  if (length(out_list) == 0) stop("All features failed during computation.")
+  
+  result_df <- as.data.frame(do.call(rbind, out_list))
+  result_df$adj_p_value <- p.adjust(result_df$p_value, method = "bonferroni")
+  return(result_df)
+}
+
+
+# Internal helper: Wasserstein Quantile-Based Inference for a Single Feature
+wasserstein_quantile_single <- function(df,
+                                        feature_col,
+                                        metadata,
+                                        outcome_col,
+                                        confounder_cols = NULL,
+                                        basis_df = 6,
+                                        t_grid = seq(0.01, 0.99, length.out = 100),
+                                        adaptive = FALSE) {
   Phi <- splines::bs(t_grid, df = basis_df, intercept = TRUE)
   K <- ncol(Phi)
   m <- length(t_grid)
   
-  run_for_otu <- function(otu) {
-    y <- df[[otu]]
-    x <- metadata[[outcome_col]]
-    
-    if (is.factor(x)) {
-      if (nlevels(x) != 2) return(NULL)
-      x <- as.numeric(x) - 1
-    } else if (!is.numeric(x)) return(NULL)
-    
-    quantile_thresholds <- stats::quantile(y, probs = t_grid, type = 8)
-    y_bin_mat <- outer(y, quantile_thresholds, FUN = ">") * 1
-    y_vec <- as.vector(y_bin_mat)
-    
-    # Build model matrix explicitly using formula
-    all_covariates <- c(outcome_col, confounder_cols)
-    fml <- as.formula(paste("~", paste(all_covariates, collapse = " + ")))
-    X0 <- model.matrix(fml, data = metadata)
-    p_dim <- ncol(X0)
-    
-    # Identify outcome column in X0
-    idx_x <- which(colnames(X0) == outcome_col)
-    if (length(idx_x) == 0) return(NULL)
-    sel_idx <- idx_x + (0:(K - 1)) * p_dim
-    
-    X_big <- kronecker(Phi, X0)
-    fit <- lm(y_vec ~ X_big - 1)
-    coef_hat <- coef(fit)
-    vcov_hat <- sandwich::vcovHC(fit, type = "HC1")
-    
-    res_cpp <- compute_beta1_se(Phi, coef_hat, vcov_hat, sel_idx)
-    beta1_grid <- res_cpp$beta1
-    se1_grid <- res_cpp$se1
-    
-    z_scores <- beta1_grid / se1_grid
-    pvals <- 2 * (1 - pnorm(abs(z_scores)))
-    
-    if (!adaptive) {
-      weights <- rep(1 / m, m)
-      cauchy_stat <- sum(weights * tan((0.5 - pvals) * pi))
-      p_cauchy <- 0.5 - atan(cauchy_stat) / pi
-    } else {
-      k_list <- floor(m * c(0.05, 0.1, 0.2, 0.3, 0.5))
-      p_subset <- sapply(k_list, function(k) {
-        top_k <- sort(pvals)[1:k]
-        stat_k <- sum(tan((0.5 - top_k) * pi)) / k
-        0.5 - atan(stat_k) / pi
-      })
-      stat2 <- sum(tan((0.5 - p_subset) * pi)) / length(p_subset)
-      p_cauchy <- 0.5 - atan(stat2) / pi
-    }
-    
-    auc <- pracma::trapz(t_grid, beta1_grid)
-    abs_auc <- pracma::trapz(t_grid, abs(beta1_grid))
-    
-    data.frame(
-      OTU = otu,
-      p_value = p_cauchy,
-      auc = auc,
-      abs_auc = abs_auc
-    )
+  y <- df[[feature_col]]
+  x <- metadata[[outcome_col]]
+  
+  if (is.factor(x)) {
+    if (nlevels(x) != 2) stop("Factor outcome must have 2 levels.")
+    x <- as.numeric(x) - 1
+  } else if (!is.numeric(x)) {
+    stop("Outcome must be numeric or binary factor.")
   }
   
-  if (.Platform$OS.type == "unix") {
-    out_list <- parallel::mclapply(otus, run_for_otu, mc.cores = parallel::detectCores())
+  conf_df <- if (!is.null(confounder_cols)) metadata[, confounder_cols, drop = FALSE] else NULL
+  
+  quantile_thresholds <- quantile(y, probs = t_grid, type = 8)
+  y_bin_mat <- outer(y, quantile_thresholds, FUN = ">") * 1
+  y_vec <- as.vector(y_bin_mat)
+  
+  model_data <- data.frame(.outcome = x)
+  if (!is.null(conf_df)) model_data <- cbind(model_data, conf_df)
+  X0 <- model.matrix(~ ., data = model_data)
+  p_dim <- ncol(X0)
+  
+  X_big <- kronecker(Phi, X0)
+  fit <- lm(y_vec ~ X_big - 1)
+  coef_hat <- coef(fit)
+  vcov_hat <- sandwich::vcovHC(fit, type = "HC1")
+  
+  idx_x <- which(colnames(X0) == ".outcome")
+  if (length(idx_x) == 0) stop("Outcome variable '.outcome' not found.")
+  sel_idx <- idx_x + (0:(K - 1)) * p_dim
+  
+  beta1 <- as.numeric(Phi %*% coef_hat[sel_idx])
+  se1 <- sapply(1:m, function(j) {
+    phi_j <- Phi[j, , drop = FALSE]
+    sqrt(phi_j %*% vcov_hat[sel_idx, sel_idx] %*% t(phi_j))
+  })
+  
+  z_scores <- beta1 / se1
+  pvals <- 2 * (1 - pnorm(abs(z_scores)))
+  
+  if (!adaptive) {
+    weights <- rep(1 / m, m)
+    cauchy_stat <- sum(weights * tan((0.5 - pvals) * pi))
+    p_cauchy <- 0.5 - atan(cauchy_stat) / pi
   } else {
-    out_list <- pbapply::pblapply(otus, run_for_otu)
+    k_list <- floor(m * c(0.05, 0.1, 0.2, 0.3, 0.5))
+    p_subset <- sapply(k_list, function(k) {
+      top_k <- sort(pvals)[1:k]
+      stat_k <- sum(tan((0.5 - top_k) * pi)) / k
+      0.5 - atan(stat_k) / pi
+    })
+    stat2 <- sum(tan((0.5 - p_subset) * pi)) / length(p_subset)
+    p_cauchy <- 0.5 - atan(stat2) / pi
   }
   
-  out_list <- Filter(Negate(is.null), out_list)
-  result_df <- do.call(rbind, out_list)
-  result_df$adj_p_value <- p.adjust(result_df$p_value, method = "bonferroni")
+  auc <- pracma::trapz(t_grid, beta1)
+  abs_auc <- pracma::trapz(t_grid, abs(beta1))
   
-  return(result_df)
+  data.frame(
+    Feature = feature_col,
+    p_value = p_cauchy,
+    auc = auc,
+    abs_auc = abs_auc
+  )
 }

@@ -25,7 +25,6 @@ Imports:
     splines,
     sandwich,
     transport,
-    Rcpp,
     progressr,
     pbapply,
     fpc,
@@ -33,5 +32,4 @@ Imports:
     pracma
 URL: https://github.com/bioscinema/WasserSpectrum
 RoxygenNote: 7.3.2
-LinkingTo: 
-    Rcpp, RcppEigen, RcppProgress
+

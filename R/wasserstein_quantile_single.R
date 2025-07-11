@@ -26,10 +26,6 @@ wasserstein_quantile_single <- function(df,
                                         basis_df = 6,
                                         t_grid = seq(0.01, 0.99, length.out = 100),
                                         adaptive = FALSE) {
-  requireNamespace("splines")
-  requireNamespace("sandwich")
-  requireNamespace("pracma")
-  
   Phi <- splines::bs(t_grid, df = basis_df, intercept = TRUE)
   K <- ncol(Phi)
   m <- length(t_grid)
@@ -48,21 +44,20 @@ wasserstein_quantile_single <- function(df,
   
   quantile_thresholds <- quantile(y, probs = t_grid, type = 8)
   y_bin_mat <- outer(y, quantile_thresholds, FUN = ">") * 1
+  y_vec <- as.vector(y_bin_mat)
   
-  model_data <- data.frame(x = x)
+  model_data <- data.frame(.outcome = x)
   if (!is.null(conf_df)) model_data <- cbind(model_data, conf_df)
   X0 <- model.matrix(~ ., data = model_data)
   p_dim <- ncol(X0)
   
   X_big <- kronecker(Phi, X0)
-  y_vec <- as.vector(y_bin_mat)
-  
   fit <- lm(y_vec ~ X_big - 1)
   coef_hat <- coef(fit)
   vcov_hat <- sandwich::vcovHC(fit, type = "HC1")
   
-  idx_x <- which(colnames(X0) == "x")
-  if (length(idx_x) == 0) stop("Outcome variable 'x' not found.")
+  idx_x <- which(colnames(X0) == ".outcome")
+  if (length(idx_x) == 0) stop("Outcome variable '.outcome' not found.")
   sel_idx <- idx_x + (0:(K - 1)) * p_dim
   
   beta1 <- as.numeric(Phi %*% coef_hat[sel_idx])
