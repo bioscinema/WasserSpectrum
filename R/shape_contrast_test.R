@@ -3,7 +3,7 @@
 #' Performs a Wald-type test for shape-based contrasts of group-specific spectrum curves
 #' using a linear combination of quantile levels and group contrasts.
 #'
-#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass_gls}},
+#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass}},
 #' containing basis expansion, estimated coefficients, and covariance matrix.
 #' @param t_vec A numeric vector of quantile levels \(t_1, \dots, t_m\) over which to define the shape contrast.
 #' @param contrast_t A numeric vector of weights (length \(m\)) defining the shape contrast over quantiles.

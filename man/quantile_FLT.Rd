@@ -7,7 +7,7 @@
 quantile_FLT(spectrum_obj, a, b)
 }
 \arguments{
-\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum_gls}}, which contains
+\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum}}, which contains
 basis matrix, coefficient estimates, robust covariance matrix, and other fitting information.}
 
 \item{a}{Lower bound of the quantile interval (e.g., 0.25).}
@@ -26,7 +26,7 @@ A list containing:
 \description{
 Performs a Wald-type integral test to assess whether the estimated coefficient curve
 \eqn{\beta_1(t)} is significantly different from zero over a specified quantile interval
-\eqn{[a, b]}. This test is based on the output of \code{\link{wasserstein_spectrum_gls}}.
+\eqn{[a, b]}. This test is based on the output of \code{\link{wasserstein_spectrum}}.
 }
 \details{
 The function computes the test statistic:
@@ -42,7 +42,7 @@ and the variance of the integral is computed using the delta method.
 \examples{
 \dontrun{
 fit <- wasserstein_spectrum(df = example_df,
-                                diversity_col = "Shannon",
+                                feature_col = "Shannon",
                                 outcome_col = "BMI",
                                 confounder_cols = c("Age", "Sex"))
 flt_result <- quantile_FLT(fit, a = 0.25, b = 0.75)

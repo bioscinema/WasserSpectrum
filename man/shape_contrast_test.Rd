@@ -7,7 +7,7 @@
 shape_contrast_test(spectrum_obj, t_vec, contrast_t, contrast_group = NULL)
 }
 \arguments{
-\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum_multiclass_gls}},
+\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum_multiclass}},
 containing basis expansion, estimated coefficients, and covariance matrix.}
 
 \item{t_vec}{A numeric vector of quantile levels \(t_1, \dots, t_m\) over which to define the shape contrast.}

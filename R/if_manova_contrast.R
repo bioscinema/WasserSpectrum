@@ -2,9 +2,9 @@
 #'
 #' Performs a Wald-type contrast test over a specified quantile interval \eqn{[a, b]} to assess whether
 #' the integrated group-level spectrum curves differ significantly. This function is based on the output
-#' of \code{\link{wasserstein_spectrum_multiclass_gls}}.
+#' of \code{\link{wasserstein_spectrum_multiclass}}.
 #'
-#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass_gls}}, containing
+#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass}}, containing
 #' estimated group-level coefficients, basis matrix, and robust variance-covariance matrix.
 #' @param a Lower bound of the quantile interval \eqn{a \in (0, 1)}.
 #' @param b Upper bound of the quantile interval \eqn{b \in (0, 1)}, where \code{b > a}.
@@ -34,7 +34,7 @@
 #' @examples
 #' \dontrun{
 #' # Global test over middle quantiles
-#' fit <- wasserstein_spectrum_multiclass_gls(...)
+#' fit <- wasserstein_spectrum_multiclass(...)
 #' test <- if_manova_contrast(fit, a = 0.2, b = 0.8)
 #' 
 #' # Pairwise contrast

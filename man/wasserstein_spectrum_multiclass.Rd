@@ -6,7 +6,7 @@
 \usage{
 wasserstein_spectrum_multiclass(
   df,
-  diversity_col,
+  feature_col,
   outcome_col,
   reference_level,
   confounder_cols = NULL,
@@ -20,7 +20,7 @@ wasserstein_spectrum_multiclass(
 \arguments{
 \item{df}{A data frame containing the diversity index, exposure variable, and optional confounders.}
 
-\item{diversity_col}{A string specifying the column name of the continuous alpha diversity index.}
+\item{feature_col}{A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).}
 
 \item{outcome_col}{A string specifying the name of the categorical exposure variable (with \code{K >= 2} levels).}
 
@@ -69,7 +69,7 @@ The output enables inference and visualization of how different groups differ ac
 \dontrun{
 result <- wasserstein_spectrum_multiclass(
   df = example_df,
-  diversity_col = "Shannon",
+  feature_col = "Shannon",
   outcome_col = "DiseaseGroup",
   reference_level = "Healthy",
   confounder_cols = c("Age", "Sex")

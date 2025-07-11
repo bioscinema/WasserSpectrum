@@ -3,7 +3,7 @@
 #' Performs a Wald-type global MANOVA test to assess whether the integrated spectrum curves differ
 #' across groups (vs reference) over a specified quantile interval \eqn{[a, b]}.
 #'
-#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass_gls}}.
+#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass}}.
 #' It must contain estimated coefficients, basis functions, quantile grid, and variance-covariance matrix.
 #' @param a Lower bound of the quantile interval \eqn{a \in (0, 1)}.
 #' @param b Upper bound of the quantile interval \eqn{b > a}.
@@ -28,7 +28,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' fit <- wasserstein_spectrum_multiclass_gls(...)
+#' fit <- wasserstein_spectrum_multiclass(...)
 #' test <- if_manova(fit, a = 0.2, b = 0.8)
 #' print(test$p_value)
 #' }

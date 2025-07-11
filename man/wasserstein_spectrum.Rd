@@ -6,7 +6,7 @@
 \usage{
 wasserstein_spectrum(
   df,
-  diversity_col,
+  feature_col,
   outcome_col,
   confounder_cols = NULL,
   basis_df = 6,
@@ -19,7 +19,7 @@ wasserstein_spectrum(
 \arguments{
 \item{df}{A data frame containing the alpha diversity values, exposure variable, and optional confounders.}
 
-\item{diversity_col}{A string specifying the column name containing the continuous alpha diversity index.}
+\item{feature_col}{A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).}
 
 \item{outcome_col}{A string specifying the name of the exposure variable (binary or numeric).}
 
@@ -67,7 +67,7 @@ for residual correlation across quantile levels.
 \examples{
 \dontrun{
 result <- wasserstein_spectrum(df = example_df,
-                                   diversity_col = "Shannon",
+                                   feature_col = "Shannon",
                                    outcome_col = "BMI",
                                    confounder_cols = c("Age", "Sex"))
 plot(result$quantiles, result$beta1, type = "l")

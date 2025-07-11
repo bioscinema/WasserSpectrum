@@ -2,9 +2,9 @@
 #'
 #' Performs a Hotelling-type test at each quantile to assess whether group-level contrast curves
 #' \eqn{\beta_k(t)} jointly differ from zero. This function applies to results from
-#' \code{\link{wasserstein_spectrum_multiclass_gls}}.
+#' \code{\link{wasserstein_spectrum_multiclass}}.
 #'
-#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass_gls}},
+#' @param spectrum_obj An object returned by \code{\link{wasserstein_spectrum_multiclass}},
 #' containing estimated contrast curves, robust covariance matrix, and spline basis matrix.
 #'
 #' @return A data frame with the following columns:
@@ -25,9 +25,9 @@
 #'
 #' @examples
 #' \dontrun{
-#' fit <- wasserstein_spectrum_multiclass_gls(
+#' fit <- wasserstein_spectrum_multiclass(
 #'   df = example_df,
-#'   diversity_col = "Shannon",
+#'   feature_col = "Shannon",
 #'   outcome_col = "Group",
 #'   reference_level = "Healthy",
 #'   confounder_cols = c("Age", "Sex")

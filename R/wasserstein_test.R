@@ -6,7 +6,7 @@
 #' diversity distribution. The null distribution is generated via permutation of group labels.
 #'
 #' @param df A data frame containing the alpha diversity values and group labels.
-#' @param diversity_col A string specifying the column name in \code{df} containing the alpha diversity index.
+#' @param feature_col A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).
 #' @param group_col A string specifying the column name in \code{df} indicating the group variable.
 #' Must have exactly two unique values.
 #' @param nperm Number of permutations used to generate the null distribution (default is 1000).
@@ -30,18 +30,18 @@
 #'
 #' @examples
 #' \dontrun{
-#' result <- wasserstein_test(df = example_df, diversity_col = "Shannon", group_col = "Group")
+#' result <- wasserstein_test(df = example_df, feature_col = "Shannon", group_col = "Group")
 #' print(result$p_value)
 #' }
 #'
 #' @importFrom transport wasserstein1d
 #' @export
-wasserstein_test <- function(df, diversity_col, group_col, 
+wasserstein_test <- function(df, feature_col, group_col, 
                              nperm = 1000, plot = TRUE, seed = 123) {
   set.seed(seed)
   
   # Extract variables
-  diversity <- df[[diversity_col]]
+  diversity <- df[[feature_col]]
   group <- df[[group_col]]
   groups <- unique(group)
   if (length(groups) != 2) stop("group_col must have exactly 2 groups")

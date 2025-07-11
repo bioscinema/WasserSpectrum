@@ -7,7 +7,7 @@
 if_manova(spectrum_obj, a, b)
 }
 \arguments{
-\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum_multiclass_gls}}.
+\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum_multiclass}}.
 It must contain estimated coefficients, basis functions, quantile grid, and variance-covariance matrix.}
 
 \item{a}{Lower bound of the quantile interval \eqn{a \in (0, 1)}.}
@@ -37,7 +37,7 @@ where \eqn{\beta_k(t)} denotes the deviation curve for group \eqn{k} vs referenc
 }
 \examples{
 \dontrun{
-fit <- wasserstein_spectrum_multiclass_gls(...)
+fit <- wasserstein_spectrum_multiclass(...)
 test <- if_manova(fit, a = 0.2, b = 0.8)
 print(test$p_value)
 }

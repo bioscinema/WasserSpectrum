@@ -6,7 +6,7 @@
 \usage{
 wasserstein_test(
   df,
-  diversity_col,
+  feature_col,
   group_col,
   nperm = 1000,
   plot = TRUE,
@@ -16,7 +16,7 @@ wasserstein_test(
 \arguments{
 \item{df}{A data frame containing the alpha diversity values and group labels.}
 
-\item{diversity_col}{A string specifying the column name in \code{df} containing the alpha diversity index.}
+\item{feature_col}{A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).}
 
 \item{group_col}{A string specifying the column name in \code{df} indicating the group variable.
 Must have exactly two unique values.}
@@ -51,7 +51,7 @@ location-based tests.
 }
 \examples{
 \dontrun{
-result <- wasserstein_test(df = example_df, diversity_col = "Shannon", group_col = "Group")
+result <- wasserstein_test(df = example_df, feature_col = "Shannon", group_col = "Group")
 print(result$p_value)
 }
 

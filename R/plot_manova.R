@@ -40,7 +40,7 @@ plot_manova <- function(manova_df,
                         ribbon_color = "lightblue",
                         title = "Quantile-wise MANOVA",
                         base_size = 14) {
-  library(ggplot2)
+
   type <- match.arg(type)
   
   if (!all(c("quantile", "Fval", "pval") %in% colnames(manova_df))) {
@@ -64,6 +64,5 @@ plot_manova <- function(manova_df,
   if (type == "p") return(gp)
   
   # type == "both"
-  suppressPackageStartupMessages(library(patchwork))
-  return(gF / gp + plot_layout(heights = c(1, 1)))
+  return(gF / gp + patchwork::plot_layout(heights = c(1, 1)))
 }

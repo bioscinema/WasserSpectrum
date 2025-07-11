@@ -6,7 +6,7 @@
 #' dispersion around a shared Wasserstein barycenter.
 #'
 #' @param df A data frame containing the alpha diversity values and group labels.
-#' @param diversity_col A string specifying the column name in \code{df} that contains the alpha diversity index.
+#' @param feature_col A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).
 #' @param group_col A string specifying the column name in \code{df} that indicates the group variable. Must have at least two unique levels.
 #' @param nperm Number of permutations used to generate the null distribution (default is 1000).
 #' @param plot Logical. If \code{TRUE}, displays a histogram of the null distribution with the observed test statistic (default is \code{TRUE}).
@@ -27,7 +27,7 @@
 #' @examples
 #' \dontrun{
 #' result <- frechet_wasserstein_test(df = example_df,
-#'                                    diversity_col = "Shannon",
+#'                                    feature_col = "Shannon",
 #'                                    group_col = "Group")
 #' print(result$p_value)
 #' }
@@ -35,15 +35,14 @@
 #' @importFrom stats quantile
 #' @export
 frechet_wasserstein_test <- function(df, 
-                                     diversity_col, 
+                                     feature_col, 
                                      group_col, 
                                      nperm = 1000, 
                                      plot = TRUE,
                                      seed = 123) {
   set.seed(seed)
-  library(dplyr)
   
-  y <- df[[diversity_col]]
+  y <- df[[feature_col]]
   group <- as.factor(df[[group_col]])
   groups <- levels(group)
   G <- length(groups)

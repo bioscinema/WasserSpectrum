@@ -18,17 +18,12 @@ Encoding: UTF-8
 LazyData: true
 Imports:
     stats,
-    utils,
-    graphics,
     ggplot2,
     patchwork,
     splines,
     sandwich,
     transport,
-    progressr,
     pbapply,
-    fpc,
-    cluster,
     pracma
 URL: https://github.com/bioscinema/WasserSpectrum
 RoxygenNote: 7.3.2

@@ -6,7 +6,7 @@
 \usage{
 frechet_wasserstein_test(
   df,
-  diversity_col,
+  feature_col,
   group_col,
   nperm = 1000,
   plot = TRUE,
@@ -16,7 +16,7 @@ frechet_wasserstein_test(
 \arguments{
 \item{df}{A data frame containing the alpha diversity values and group labels.}
 
-\item{diversity_col}{A string specifying the column name in \code{df} that contains the alpha diversity index.}
+\item{feature_col}{A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).}
 
 \item{group_col}{A string specifying the column name in \code{df} that indicates the group variable. Must have at least two unique levels.}
 
@@ -48,7 +48,7 @@ to microbiome studies, where diversity values often exhibit ties, skewness, or n
 \examples{
 \dontrun{
 result <- frechet_wasserstein_test(df = example_df,
-                                   diversity_col = "Shannon",
+                                   feature_col = "Shannon",
                                    group_col = "Group")
 print(result$p_value)
 }

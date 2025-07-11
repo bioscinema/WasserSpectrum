@@ -5,7 +5,7 @@
 #' contrast curves \eqn{\beta_k(t)} comparing each level to the user-defined reference group.
 #'
 #' @param df A data frame containing the diversity index, exposure variable, and optional confounders.
-#' @param diversity_col A string specifying the column name of the continuous alpha diversity index.
+#' @param feature_col A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).
 #' @param outcome_col A string specifying the name of the categorical exposure variable (with \code{K >= 2} levels).
 #' @param reference_level A string indicating which level of the exposure variable to use as the reference group.
 #' @param confounder_cols Optional character vector of column names to include as covariates (default is \code{NULL}).
@@ -40,7 +40,7 @@
 #' \dontrun{
 #' result <- wasserstein_spectrum_multiclass(
 #'   df = example_df,
-#'   diversity_col = "Shannon",
+#'   feature_col = "Shannon",
 #'   outcome_col = "DiseaseGroup",
 #'   reference_level = "Healthy",
 #'   confounder_cols = c("Age", "Sex")
@@ -54,7 +54,7 @@
 #' @importFrom ggplot2 ggplot aes geom_line geom_ribbon geom_hline facet_wrap labs theme_minimal
 #' @export
 wasserstein_spectrum_multiclass <- function(df,
-                                                diversity_col,
+                                                feature_col,
                                                 outcome_col,
                                                 reference_level,
                                                 confounder_cols = NULL,
@@ -64,11 +64,9 @@ wasserstein_spectrum_multiclass <- function(df,
                                                 plot = TRUE,
                                                 seed = 123) {
   set.seed(seed)
-  library(splines)
-  library(ggplot2)
   
   # Outcome and predictors
-  y <- df[[diversity_col]]
+  y <- df[[feature_col]]
   x <- factor(df[[outcome_col]])
   x <- relevel(x, ref = reference_level)
   x_df <- data.frame(x = x)

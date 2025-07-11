@@ -5,7 +5,7 @@
 #' allowing for smooth inference on the coefficient function \eqn{\beta_1(t)} with robust standard errors.
 #'
 #' @param df A data frame containing the alpha diversity values, exposure variable, and optional confounders.
-#' @param diversity_col A string specifying the column name containing the continuous alpha diversity index.
+#' @param feature_col A string specifying the column name in \code{df} corresponding to the feature of interest (e.g., taxon, gene, or diversity index).
 #' @param outcome_col A string specifying the name of the exposure variable (binary or numeric).
 #' @param confounder_cols Optional character vector of column names to adjust for as covariates (default is \code{NULL}).
 #' @param basis_df Degrees of freedom used for the B-spline basis in quantile expansion (default is 6).
@@ -40,7 +40,7 @@
 #' @examples
 #' \dontrun{
 #' result <- wasserstein_spectrum(df = example_df,
-#'                                    diversity_col = "Shannon",
+#'                                    feature_col = "Shannon",
 #'                                    outcome_col = "BMI",
 #'                                    confounder_cols = c("Age", "Sex"))
 #' plot(result$quantiles, result$beta1, type = "l")
@@ -51,7 +51,7 @@
 #' @importFrom sandwich vcovHC
 #' @export
 wasserstein_spectrum <- function(df, 
-                                     diversity_col, 
+                                     feature_col, 
                                      outcome_col, 
                                      confounder_cols = NULL,
                                      basis_df = 6, # use < 6 if sample size < 100 to avoid overfitting
@@ -61,10 +61,9 @@ wasserstein_spectrum <- function(df,
                                      seed = 123) {
   set.seed(seed)
   
-  library(splines)
   
   # Extract data
-  y <- df[[diversity_col]]
+  y <- df[[feature_col]]
   x <- df[[outcome_col]]
   if (is.factor(x)) {
     if (nlevels(x) != 2) stop("outcome_col must be binary or numeric.")

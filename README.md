@@ -35,8 +35,8 @@ library(WasserSpectrum)
   Extends the above to **multi-group** settings ($G \geq 2$) using Fréchet mean and variance.
 
 ```r
-wasserstein_test(df, diversity_col = "Shannon", group_col = "Group")
-frechet_wasserstein_test(df, diversity_col = "Shannon", group_col = "Group")
+wasserstein_test(df, feature_col = "Shannon", group_col = "Group")
+frechet_wasserstein_test(df, feature_col = "Shannon", group_col = "Group")
 ```
 
 ---
@@ -50,7 +50,7 @@ frechet_wasserstein_test(df, diversity_col = "Shannon", group_col = "Group")
   Extends spectrum estimation to **multi-class categorical** exposures. Supports covariate adjustment.
 
 ```r
-fit <- wasserstein_spectrum(df, diversity_col = "Shannon", outcome_col = "Group")
+fit <- wasserstein_spectrum(df, feature_col = "Shannon", outcome_col = "Group")
 plot(fit$plot)  # Returns a ggplot object
 ```
 

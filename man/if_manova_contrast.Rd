@@ -7,7 +7,7 @@
 if_manova_contrast(spectrum_obj, a, b, contrast = NULL)
 }
 \arguments{
-\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum_multiclass_gls}}, containing
+\item{spectrum_obj}{An object returned by \code{\link{wasserstein_spectrum_multiclass}}, containing
 estimated group-level coefficients, basis matrix, and robust variance-covariance matrix.}
 
 \item{a}{Lower bound of the quantile interval \eqn{a \in (0, 1)}.}
@@ -29,7 +29,7 @@ A list with the following components:
 \description{
 Performs a Wald-type contrast test over a specified quantile interval \eqn{[a, b]} to assess whether
 the integrated group-level spectrum curves differ significantly. This function is based on the output
-of \code{\link{wasserstein_spectrum_multiclass_gls}}.
+of \code{\link{wasserstein_spectrum_multiclass}}.
 }
 \details{
 This function tests whether the **integrated spectrum curves** differ between groups
@@ -46,7 +46,7 @@ where \(\theta = C \int_a^b \beta(t)\,dt\).
 \examples{
 \dontrun{
 # Global test over middle quantiles
-fit <- wasserstein_spectrum_multiclass_gls(...)
+fit <- wasserstein_spectrum_multiclass(...)
 test <- if_manova_contrast(fit, a = 0.2, b = 0.8)
 
 # Pairwise contrast
