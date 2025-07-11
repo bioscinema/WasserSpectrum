@@ -6,6 +6,7 @@ Key features:
 
 * Permutation-based global tests using Wasserstein distances
 * Spectrum regression models estimating functional effects $\beta(t)$
+* Quantile-wise association testing using Cauchy combination methods (single or multiple features)
 * Interval-wise Wald tests for effect integration
 * Shape contrast tests for pattern comparison
 * Quantile-wise multivariate hypothesis testing (MANOVA)
@@ -55,16 +56,31 @@ plot(fit$plot)  # Returns a ggplot object
 
 ---
 
-### 2b. Quantile-Based Inference with OTU Clustering
+### 2b. Quantile-Based Association Testing Using the Wasserstein Spectrum
 
-* `wasserstein_quantile_cluster()`
-  Performs quantile-wise inference on each taxon (OTU) using a B-spline projection of the outcome effect curve $\beta(t)$.
-  Aggregates quantile-wise p-values using Cauchy combination (with optional adaptive version).
-
+* `wasserstein_quantile_single()`
+  Performs quantile-wise inference on a single feature (e.g., OTU) using a B-spline projection of the outcome effect curve $\beta(t)$.
+Aggregates quantile-wise p-values using Cauchy combination (with optional adaptive version).
+Returns the global p-value, area under the effect curve (AUC), and absolute AUC.
 
 ```r
-wasserstein_quantile_cluster(
-  df = t(count_data),  # function expects taxa in columns, samples in rows
+wasserstein_quantile_single(
+  df = t(count_data),         # features in columns, samples in rows
+  feature_col = "G000830295", # the feature to test
+  metadata = metadata,
+  outcome_col = "BMI",
+  confounder_cols = c("Age", "Gender"),
+  adaptive = FALSE
+)
+```
+
+* `wasserstein_quantile_test()`
+  Applies *wasserstein_quantile_single()* to each *feature (column in df)* and performs parallelized quantile-wise inference across all features.
+Returns a data frame with global p-values, AUCs, and Bonferroni-adjusted p-values for multiple testing correction.
+
+```r
+wasserstein_quantile_test(
+  df = t(count_data),  # function expects features in columns, samples in rows
   metadata = metadata,
   outcome_col = "BMI",
   confounder_cols = c("Age", "Gender"),
@@ -120,7 +136,7 @@ if_manova_contrast(fit, a = 0.2, b = 0.6, contrast = c(1, -1, 0))  # Group 1 vs 
    * Quantile range (via `quantile_FLT`, `if_manova`, `if_manova_contrast`)
    * Shape contrasts (`shape_contrast_test`)
    * Full-grid profile (`spectrum_manova` + `plot.manova`)
-
+   * Single/multiple feature association (`wasserstein_quantile_single`, `wasserstein_quantile_test`)
 ---
 
 ## License
