@@ -61,7 +61,6 @@ wasserstein_spectrum <- function(df,
                                      seed = 123) {
   set.seed(seed)
   
-  
   # Extract data
   y <- df[[feature_col]]
   x <- df[[outcome_col]]
@@ -121,15 +120,96 @@ wasserstein_spectrum <- function(df,
   
   # Plot
   if (plot) {
-    plot(t_grid, beta1_grid, type = "l", lwd = 2, col = "darkred",
-         ylim = range(c(lower, upper)), xlab = "Quantile level t",
-         ylab = expression(beta[1](t)), main = "Wasserstein Spectrum (GLS)")
-    polygon(c(t_grid, rev(t_grid)),
-            c(upper, rev(lower)),
-            col = adjustcolor("darkred", alpha.f = 0.2), border = NA)
-    abline(h = 0, lty = 2)
-    legend("topright", legend = c(expression(hat(beta)[1](t)), "CI"),
-           col = c("darkred", adjustcolor("darkred", alpha.f = 0.2)), lwd = c(2, 8), bty = "n")
+      df_lolli <- data.frame(
+        quantile = t_grid,
+        beta      = beta1_grid,
+        lower     = lower,
+        upper     = upper
+      )
+      df_lolli$significant <- with(df_lolli, lower > 0 | upper < 0)
+      df_lolli$bar_color <- ifelse(df_lolli$significant, "#e41a1c", "grey70")
+
+      lollipop_p <- ggplot(df_lolli, aes(x = quantile, y = beta)) +
+        geom_segment(
+          aes(xend = quantile, yend = 0, color = bar_color),
+          size = 0.7, lineend = "round", show.legend = FALSE
+        ) +
+        geom_point(
+          shape = 21, fill = "white", color = "#397d54",
+          size = 1.5, stroke = 1
+        ) +
+        geom_errorbar(
+          aes(ymin = lower, ymax = upper),
+          width = 0.01, color = "#397d54", alpha = 0.7
+        ) +
+        scale_color_identity() +
+        labs(
+          x = "Quantile level t",
+          y = expression(hat(beta)[1](t)),
+          title = "Lollipop Plot of Quantile-wise Effect Sizes"
+        ) +
+        theme_minimal(base_size = 14) +
+        theme(
+          plot.title = element_text(
+            hjust = 0.5,
+            face = "bold",
+            size = 12,
+            margin = margin(b = 8)
+          ),
+          axis.title.x = element_text(size = 11, margin = margin(t = 6)),
+          axis.title.y = element_text(size = 11, margin = margin(r = 6)),
+          axis.text = element_text(color = "black"),
+          panel.grid.minor = element_blank()
+        )
+      df_bar <- data.frame(
+        angle = t_grid * 360,
+        beta  = beta1_grid
+      )
+      
+      # Circular bar plot with custom colors
+      circular_p <- ggplot(df_bar, aes(x = angle, y = beta, fill = beta)) +
+        geom_col(width = 2, color = NA) +
+        coord_polar(theta = "x", start = 0, direction = 1, clip = "off") +
+        
+        # X axis: quantile as percent
+        scale_x_continuous(
+          limits = c(0, 360),
+          breaks = seq(0, 360, by = 90),
+          labels = c("0%", "25%", "50%", "75%", "100%")
+        ) +
+        
+        # Y axis
+        scale_y_continuous(
+          expand = c(0, 0),
+          limits = c(min(df_bar$beta), max(df_bar$beta) * 1.15)
+        ) +
+        
+        # Custom diverging color gradient
+        scale_fill_gradient2(
+          low = "#d7312d", mid = "#fee395", high = "#6090c1",
+          midpoint = 0, name = expression(hat(beta)[1](t))
+        ) +
+        
+        # Labels and theme
+        labs(
+          title = "Quantile-wise Effect Sizes Across the Distribution",
+          x = NULL, y = NULL
+        ) +
+        theme_minimal(base_size = 14) +
+        theme(
+          plot.title = element_text(hjust = 0.5, face = "bold", size = 13),
+          panel.grid.major = element_line(color = "grey90"),
+          panel.grid.minor = element_blank(),
+          axis.text.y = element_blank(),
+          axis.text.x = element_text(size = 11, vjust = -1.8),
+          legend.position = "right",
+          legend.title = element_text(size = 10),
+          legend.text  = element_text(size = 9),
+          legend.key.height = unit(0.4, "cm"),
+          legend.key.width  = unit(0.3, "cm"),
+          plot.margin = margin(10, 20, 10, 20)
+        )
+    
   }
   
   return(list(
@@ -142,6 +222,8 @@ wasserstein_spectrum <- function(df,
     coef = coef_hat,
     vcov = vcov_hat,
     idx_x = idx_x,
-    basis_df = basis_df
+    basis_df = basis_df,
+    lollipop_plot = lollipop_p,
+    circular_plot = circular_p
   ))
 }
