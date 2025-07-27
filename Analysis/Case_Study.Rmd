@@ -111,9 +111,10 @@ frechet_wasserstein_test(meta_df,
 ```{r, warning=FALSE}
 status_levels <- unique(sample_data(ps_filt)$Status)
 print(status_levels)
+variable <- "HbA1c"
 shannon_by_status <- list()
 meta_by_status <- list()
-
+status_levels = c("MMC", "HC")
 for (st in status_levels) {
   # Subset phyloseq first
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -131,7 +132,8 @@ for (st in status_levels) {
 }
 
 
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
   df = df_sub, 
   feature_col = "Shannon", 
@@ -170,6 +172,16 @@ HbA1c.ws3 <- wasserstein_spectrum(
   alpha = 0.05,
   plot = TRUE,
   seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, ".eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
 )
 })
 
@@ -247,7 +259,8 @@ Status.ws3$plot
 ```{r, warning=FALSE}
 shannon_by_status <- list()
 meta_by_status <- list()
-
+variable <- "BMI"
+status_levels = c("MMC", "HC")
 for (st in status_levels) {
   # Subset phyloseq first
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -267,7 +280,8 @@ for (st in status_levels) {
 }
 
 
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
   df = df_sub, 
   feature_col = "Shannon", 
@@ -306,6 +320,16 @@ HbA1c.ws3 <- wasserstein_spectrum(
   alpha = 0.05,
   plot = TRUE,
   seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, ".eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
 )
 })
 
@@ -732,7 +756,8 @@ HbA1c.ws3 <- wasserstein_spectrum(
 ```{r, warning=FALSE}
 shannon_by_status <- list()
 meta_by_status <- list()
-
+variable <- "adiponectin"
+status_levels = c("MMC", "HC")
 for (st in status_levels) {
   # Subset phyloseq first
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -752,7 +777,8 @@ for (st in status_levels) {
 }
 
 
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
   df = df_sub, 
   feature_col = "Shannon", 
@@ -792,6 +818,16 @@ HbA1c.ws3 <- wasserstein_spectrum(
   plot = TRUE,
   seed = 123
 )
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, ".eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 
@@ -802,7 +838,8 @@ HbA1c.ws3 <- wasserstein_spectrum(
 ```{r, warning=FALSE}
 shannon_by_status <- list()
 meta_by_status <- list()
-
+variable <- "triglycerides"
+status_levels = c("MMC", "HC")
 for (st in status_levels) {
   # Subset phyloseq first
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -822,7 +859,8 @@ for (st in status_levels) {
 }
 
 
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
   df = df_sub, 
   feature_col = "Shannon", 
@@ -861,6 +899,16 @@ HbA1c.ws3 <- wasserstein_spectrum(
   alpha = 0.05,
   plot = TRUE,
   seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, ".eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
 )
 })
 
