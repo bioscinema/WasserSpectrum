@@ -180,8 +180,7 @@ wasserstein_spectrum <- function(df,
         
         # Y axis
         scale_y_continuous(
-          expand = c(0, 0),
-          limits = c(min(df_bar$beta), max(df_bar$beta) * 1.15)
+          expand = c(0, 0)
         ) +
         
         # Custom diverging color gradient
