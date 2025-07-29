@@ -71,8 +71,8 @@ wasserstein_spectrum_multiclass <- function(df,
   x <- relevel(x, ref = reference_level)
   x_df <- data.frame(x = x)
   X0 <- model.matrix(~ x, data = x_df)  # includes intercept + K−1 dummies
-  coef_names <- colnames(X0)[-1]
-  
+  # coef_names <- colnames(X0)[-1]
+  coef_names <- sub("^x", "", colnames(X0)[-1])
   if (!is.null(confounder_cols)) {
     conf_df <- df[, confounder_cols, drop = FALSE]
     X0 <- cbind(X0, model.matrix(~ ., data = conf_df)[, -1])
