@@ -185,7 +185,7 @@ wasserstein_spectrum <- function(df,
         
         # Custom diverging color gradient
         scale_fill_gradient2(
-          low = "#d7312d", mid = "#fee395", high = "#6090c1",
+          low = "#6090c1", mid = "#fee395", high = "#d7312d",
           midpoint = 0, name = expression(hat(beta)[1](t))
         ) +
         
