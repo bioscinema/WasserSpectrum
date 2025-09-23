@@ -114,7 +114,7 @@ plot(fit_bin$quantiles, fit_bin$beta1, type = "l")
 fit_bin$lollipop_plot
 ```
 
-![Clostridium vs BMI](Analysis/figures/Colstridium_BMI.png)
+![Clostridium vs BMI](Analysis/figures/Colstridium_HbA1c.png)
 
 
 ### `wasserstein_spectrum_multiclass`
