@@ -1013,7 +1013,7 @@ frechet_wasserstein_test(meta_df,
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "HbA1c"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1035,44 +1035,57 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
@@ -1148,7 +1161,7 @@ Status.ws3$plot
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "BMI"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1170,45 +1183,59 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
 
 
 
@@ -1363,7 +1390,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "ANP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1385,44 +1412,57 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
@@ -1432,7 +1472,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "SBP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1454,46 +1494,58 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
-
 ```
 
 ### Part 9: Wasserstein Spectrum of DBP
@@ -1501,7 +1553,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "DBP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1523,44 +1575,57 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
@@ -1570,7 +1635,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "LVEF"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1592,46 +1657,58 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
-
 ```
 
 ### Part 11: Wasserstein Spectrum of adiponectin
@@ -1639,7 +1716,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "adiponectin"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1661,44 +1738,57 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 
@@ -1710,7 +1800,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 status_levels <- unique(sample_data(ps_filt)$Status)
 tree <- phy_tree(ps_filt)
 meta_by_status <- list()
-
+variable <- "triglycerides"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1732,46 +1822,58 @@ for (st in status_levels) {
 }
 
 # Run wasserstein spectrum models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Faith.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
-
 ```
 
 ## Chao1
@@ -1820,7 +1922,7 @@ frechet_wasserstein_test(meta_df,
 ```{r}
 status_levels <- unique(sample_data(ps_filt)$Status)
 meta_by_status <- list()
-
+variable <- "HbA1c"
 # Precompute Chao1
 chao1_vec <- setNames(
   apply(t(otu_table(ps_filt)), 1, function(x) vegan::estimateR(x)["S.chao1"]),
@@ -1845,45 +1947,57 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
@@ -1956,6 +2070,7 @@ Status.ws3$plot
 
 ### Part 4: Wasserstein Spectrum of BMI
 ```{r, warning=FALSE}
+variable <- "BMI"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -1974,46 +2089,59 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
 ```
 
 ### Part 5: Wasserstein Spectrum of Waist.circumference
@@ -2144,6 +2272,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 
 ### Part 7: Wasserstein Spectrum of pro.ANP
 ```{r, warning=FALSE}
+variable <- "ANP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2162,52 +2291,66 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
 
 
 ```
 
 ### Part 8: Wasserstein Spectrum of SBP
 ```{r, warning=FALSE}
+variable <- "SBP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2226,53 +2369,67 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
+
 
 
 ```
 
 ### Part 9: Wasserstein Spectrum of DBP
 ```{r, warning=FALSE}
-
+variable <- "DBP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2291,52 +2448,65 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
 
 ```
 
 ### Part 10: Wasserstein Spectrum of Left.ventricular
 ```{r, warning=FALSE}
-
+variable <- "LVEF"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2355,51 +2525,64 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
 
 ### Part 11: Wasserstein Spectrum of adiponectin
 ```{r, warning=FALSE}
+variable <- "adiponectin"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2418,45 +2601,57 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
@@ -2464,6 +2659,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 
 ### Part 12: Wasserstein Spectrum of triglycerides
 ```{r, warning=FALSE}
+variable <- "triglycerides"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2482,45 +2678,57 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_Chao1.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
@@ -2572,7 +2780,7 @@ frechet_wasserstein_test(meta_df,
 ```{r}
 status_levels <- unique(sample_data(ps_filt)$Status)
 meta_by_status <- list()
-
+variable <- "HbA1c"
 # Precompute Chao1
 chao1_vec <- hill_phylo(comm = t(otu_table(ps_filt)), tree = tree, q = 1, rel_then_pool = FALSE)
 
@@ -2594,47 +2802,58 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
-
 ```
 
 
@@ -2705,6 +2924,7 @@ Status.ws3$plot
 
 ### Part 4: Wasserstein Spectrum of BMI
 ```{r, warning=FALSE}
+variable <- "BMI"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2723,46 +2943,59 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
 ```
 
 ### Part 5: Wasserstein Spectrum of Waist.circumference
@@ -2893,6 +3126,7 @@ ws_list <- lapply(meta_by_status, function(df_sub) {
 
 ### Part 7: Wasserstein Spectrum of pro.ANP
 ```{r, warning=FALSE}
+variable <- "ANP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2911,52 +3145,66 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
 
 
 ```
 
 ### Part 8: Wasserstein Spectrum of SBP
 ```{r, warning=FALSE}
+variable <- "SBP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -2975,53 +3223,67 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Systolic.blood.pressure..mmHg.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Systolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
+
 
 
 ```
 
 ### Part 9: Wasserstein Spectrum of DBP
 ```{r, warning=FALSE}
-
+variable <- "DBP"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -3040,52 +3302,64 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Diastolic.blood.pressure..mmHg.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Diastolic.blood.pressure..mmHg.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
 
 ```
 
 ### Part 10: Wasserstein Spectrum of Left.ventricular
 ```{r, warning=FALSE}
-
+variable <- "LVEF"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -3104,51 +3378,63 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <- lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Left.ventricular.ejection.fraction....", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Left.ventricular.ejection.fraction....", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
-
 ```
 
 ### Part 11: Wasserstein Spectrum of adiponectin
 ```{r, warning=FALSE}
+variable <- "adiponectin"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -3167,52 +3453,64 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
-
 ```
 
 
 ### Part 12: Wasserstein Spectrum of triglycerides
 ```{r, warning=FALSE}
+variable <- "triglycerides"
 for (st in status_levels) {
   # Subset phyloseq
   ps_sub <- subset_samples(ps_filt, Status == st)
@@ -3231,46 +3529,59 @@ for (st in status_levels) {
 }
 
 # Run Wasserstein spectrum GLS models
-ws_list <- lapply(meta_by_status, function(df_sub) {
+ws_list <-  lapply(names(meta_by_status), function(st) {
+  df_sub <- meta_by_status[[st]]
   HbA1c.ws <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
+HbA1c.qflt <- quantile_FLT(spectrum_obj = HbA1c.ws, a = 0.2, b = 0.8)
 
-  HbA1c.ws2 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = "Depth",
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
+### adjust sequencing depth
+HbA1c.ws2 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
 
-  HbA1c.ws3 <- wasserstein_spectrum(
-    df = df_sub, 
-    feature_col = "Shannon", 
-    outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
-    confounder_cols = c("Depth", "Age", "Gender"),
-    basis_df = 6,
-    t_grid = seq(0.01, 0.99, length.out = 100),
-    alpha = 0.05,
-    plot = TRUE,
-    seed = 123
-  )
-
+### adjust other covariates
+HbA1c.ws3 <- wasserstein_spectrum(
+  df = df_sub, 
+  feature_col = "Shannon", 
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = seq(0.01, 0.99, length.out = 100),
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+print(HbA1c.ws3$lollipop_plot)
+fig_path <- paste0("figures/", st, "_", variable, "_qPD.eps")
+ggsave(
+  filename = fig_path,
+  plot = HbA1c.ws3$lollipop_plot,
+  device = cairo_ps,
+  width = 7,
+  height = 5,
+  fallback_resolution = 600
+)
 })
+
 
 ```
 
