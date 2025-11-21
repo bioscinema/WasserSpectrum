@@ -208,15 +208,7 @@ Status.ws <- wasserstein_spectrum_multiclass(
 
 Status.ws$plot
 
-Status.MANOVA <- spectrum_manova(Status.ws)
 
-plot_manova(manova_df = Status.MANOVA,
-            type = "both",
-            p_cutoff = 0.05,
-            line_color = "darkblue",
-            ribbon_color = "lightblue",
-            title = "Quantile-wise MANOVA",
-            base_size = 14)
 
 ### adjust sequencing depth
 

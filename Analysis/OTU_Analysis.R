@@ -18,7 +18,7 @@ library(ggsignif)
 library(hillR)
 library(WasserSpectrum)
 library(microbiome)
-load("./Real Data/cardiovascular_wgs.RData")
+load("Real Data/cardiovascular_wgs.RData")
 meta <- as(sample_data(ps),"data.frame")
 meta$SampleID <- rownames(meta)
 meta <- meta %>%
@@ -45,6 +45,45 @@ meta$Left.ventricular.ejection.fraction.... <- as.numeric(meta$Left.ventricular.
 meta <- meta[!is.na(meta$Left.ventricular.ejection.fraction....), ]
 ps_filt <- prune_samples(meta$SampleID, ps)
 sample_data(ps_filt) <- sample_data(meta)
+## --- TSS normalization ---
+ps_filt <- transform_sample_counts(ps_filt, function(x) x / sum(x))
+
+## --- Centered arcsine contrast (CAC) on OTU table ---
+otu_mat <- as(otu_table(ps_filt), "matrix")
+
+# Make sure rows = samples, cols = taxa
+taxa_rows <- taxa_are_rows(ps_filt)
+if (taxa_rows) {
+  otu_mat <- t(otu_mat)
+}
+
+# Save original dimnames
+sample_ids <- rownames(otu_mat)
+taxa_ids   <- colnames(otu_mat)
+
+p <- ncol(otu_mat)
+Tmat <- diag(p) - (1 / p) * matrix(1, nrow = p, ncol = p)
+
+arcsine <- function(x) {
+  x <- as.matrix(x)
+  2/pi*asin(sqrt(x))
+}
+
+# Apply arcsine then centered contrast
+otu_cac <- arcsine(otu_mat) %*% Tmat
+
+# Restore dimnames
+rownames(otu_cac) <- sample_ids
+colnames(otu_cac) <- taxa_ids
+
+# Put back in original orientation if needed
+if (taxa_rows) {
+  otu_cac <- t(otu_cac)
+}
+
+# Rebuild OTU table with matching taxa IDs
+otu_table(ps_filt) <- otu_table(otu_cac, taxa_are_rows = taxa_rows)
+
 # Genus-level aggregation (for HC taxa: Clostridium, Prevotella)
 ps_genus <- aggregate_taxa(ps_filt, "Genus")
 
