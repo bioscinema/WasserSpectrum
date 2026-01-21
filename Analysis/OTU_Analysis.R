@@ -129,7 +129,7 @@ res_Clostridium_BMI <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Clostridium",
   outcome_col = "BMI",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Clostridium_BMI$circular_plot
@@ -147,7 +147,7 @@ res_Clostridium_HbA1c <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Clostridium",
   outcome_col = "HbA1c",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Clostridium_HbA1c$circular_plot
@@ -165,7 +165,7 @@ res_Clostridium_LVEF <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Clostridium",
   outcome_col = "LVEF",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Clostridium_LVEF$circular_plot
@@ -185,7 +185,7 @@ res_Clostridium_Status <- wasserstein_spectrum_multiclass(
   feature_col = "Clostridium",
   outcome_col = "Status",
   reference_level = "HC",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 
@@ -207,7 +207,7 @@ res_Prevotella_BMI <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Prevotella",
   outcome_col = "BMI",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Prevotella_BMI$circular_plot
@@ -226,7 +226,7 @@ res_Prevotella_HbA1c <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Prevotella",
   outcome_col = "HbA1c",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Prevotella_HbA1c$circular_plot
@@ -244,7 +244,7 @@ res_Prevotella_LVEF <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Prevotella",
   outcome_col = "LVEF",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Prevotella_LVEF$circular_plot
@@ -264,7 +264,7 @@ res_Prevotella_Status <- wasserstein_spectrum_multiclass(
   feature_col = "Prevotella",
   outcome_col = "Status",
   reference_level = "HC",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 
@@ -298,7 +298,7 @@ res_Clostridium_BMI <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Escherichia_coli",
   outcome_col = "BMI",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Clostridium_BMI$circular_plot
@@ -317,7 +317,7 @@ res_Clostridium_HbA1c <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Escherichia_coli",
   outcome_col = "HbA1c",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Clostridium_HbA1c$circular_plot
@@ -336,7 +336,7 @@ res_Clostridium_LVEF <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Escherichia_coli",
   outcome_col = "LVEF",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Clostridium_LVEF$circular_plot
@@ -356,7 +356,7 @@ res_Clostridium_Status <- wasserstein_spectrum_multiclass(
   feature_col = "Escherichia_coli",
   outcome_col = "Status",
   reference_level = "HC",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 
@@ -376,7 +376,7 @@ res_Prevotella_BMI <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Bacteroides_vulgatus",
   outcome_col = "BMI",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Prevotella_BMI$circular_plot
@@ -396,7 +396,7 @@ res_Prevotella_HbA1c <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Bacteroides_vulgatus",
   outcome_col = "HbA1c",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Prevotella_HbA1c$circular_plot
@@ -414,7 +414,7 @@ res_Prevotella_LVEF <- wasserstein_spectrum(
   df = test_df,
   feature_col = "Bacteroides_vulgatus",
   outcome_col = "LVEF",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 res_Prevotella_LVEF$circular_plot
@@ -434,7 +434,7 @@ res_Prevotella_Status <- wasserstein_spectrum_multiclass(
   feature_col = "Bacteroides_vulgatus",
   outcome_col = "Status",
   reference_level = "HC",
-  confounder_cols = c("Age", "Gender", "Depth"),
+  confounder_cols = c("Age", "Gender"),
   plot = TRUE
 )
 

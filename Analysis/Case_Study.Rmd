@@ -189,6 +189,189 @@ ggsave(
 
 ```
 
+#### Negative Control
+
+```{r}
+library(tidyverse)
+B <- 1000
+set.seed(1)
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+models <- wasserstein_spectrum(
+  df = meta_df, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+HbA1c_seq <- seq(min(meta_df$HbA1c), max(meta_df$HbA1c), length.out = 100)
+pred_df <- data.frame(HbA1c = HbA1c_seq)
+
+perm_mat <- replicate(B, {
+  dfp <- meta_df
+  dfp$HbA1c <- sample(dfp$HbA1c)  # permute HbA1c (break association)
+  fit <- wasserstein_spectrum(
+    df = dfp, 
+    feature_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = t_grid_show,
+    alpha = 0.05,
+    plot = TRUE,
+    seed = NULL
+  )
+  fit$beta1
+})
+
+colnames(perm_mat) <- paste0("Rep_", seq_len(B))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- ggplot() +
+
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+tau_levels <- levels(factor(df_perm_long$tau))
+idx_10 <- unique(round(seq(1, length(tau_levels), length.out = 10)))
+breaks_10 <- tau_levels[idx_10]
+
+p <- p +
+  scale_x_discrete(
+    breaks = breaks_10,
+    labels = function(x) formatC(as.numeric(as.character(x)), format = "f", digits = 5)
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
+
+p
+
+```
+
+
+```{r}
+B <- 1000
+set.seed(1)
+t_grid_show <- seq(0.1, 0.9, by = 0.1)
+models <- wasserstein_spectrum(
+  df = meta_df, 
+  feature_col = "Shannon", 
+  outcome_col = "HbA1c", 
+  confounder_cols = c("Depth","Age","Gender"),
+  basis_df = 6,
+  t_grid = t_grid_show,
+  alpha = 0.05,
+  B = 500,
+  joint = T,
+  plot = TRUE,
+  seed = 123
+)
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+HbA1c_seq <- seq(min(meta_df$HbA1c), max(meta_df$HbA1c), length.out = 100)
+pred_df <- data.frame(HbA1c = HbA1c_seq)
+
+perm_mat <- replicate(B, {
+  dfp <- meta_df
+  dfp$HbA1c <- sample(dfp$HbA1c)  # permute HbA1c (break association)
+  fit <- wasserstein_spectrum(
+    df = dfp, 
+    feature_col = "Shannon", 
+    outcome_col = "HbA1c", 
+    confounder_cols = c("Depth","Age","Gender"),
+    basis_df = 6,
+    t_grid = t_grid_show,
+    alpha = 0.05,
+    B = 500,
+    joint = T,
+    plot = TRUE,
+    seed = NULL
+  )
+  fit$beta1
+})
+
+colnames(perm_mat) <- paste0("Rep_", seq_len(B))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- ggplot() +
+
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+
+p
+
+
+```
+
 
 ### Part 3: Wasserstein Spectrum of Status
 
@@ -246,6 +429,321 @@ Status.ws3$plot
 
 
 ```
+
+#### Negative Control
+
+```{r}
+B <- 1000
+set.seed(1)
+t_grid_show <- seq(0.1, 0.9, by = 0.1)
+models <-wasserstein_spectrum_multiclass(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta[1,]
+)
+
+#HbA1c_seq <- seq(min(meta_df$Status), max(meta_df$Status), length.out = 100)
+#pred_df <- data.frame(Status = HbA1c_seq)
+
+perm_mat <- replicate(B, {
+  dfp <- meta_df
+  dfp$Status <- sample(dfp$Status)  # permute HbA1c (break association)
+  fit <- wasserstein_spectrum_multiclass(
+  df = dfp,
+  feature_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  alpha = 0.05,
+  plot = TRUE,
+  seed = NULL
+)
+  fit$beta[1,]
+})
+
+colnames(perm_mat) <- paste0("Rep_", seq_len(B))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p1 <- ggplot() +
+
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+
+p1
+
+B <- 1000
+set.seed(1)
+t_grid_show <- seq(0.1, 0.9, by = 0.1)
+models <-wasserstein_spectrum_multiclass(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = t_grid_show,
+  alpha = 0.05,
+  plot = TRUE,
+  seed = 123
+)
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta[2,]
+)
+
+#HbA1c_seq <- seq(min(meta_df$Status), max(meta_df$Status), length.out = 100)
+#pred_df <- data.frame(Status = HbA1c_seq)
+
+perm_mat <- replicate(B, {
+  dfp <- meta_df
+  dfp$Status <- sample(dfp$Status)  # permute HbA1c (break association)
+  fit <- wasserstein_spectrum_multiclass(
+  df = dfp,
+  feature_col = "Shannon",
+  outcome_col = "Status",
+  reference_level = "IHD",
+  confounder_cols = "Depth",
+  basis_df = 6,
+  t_grid = t_grid_show,
+  alpha = 0.05,
+  plot = TRUE,
+  seed = NULL
+)
+  fit$beta[2,]
+})
+
+colnames(perm_mat) <- paste0("Rep_", seq_len(B))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p2 <- ggplot() +
+
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+
+p2
+
+```
+
+
+```{r}
+taus <- c(0.1, 0.25, 0.5, 0.75, 0.9)
+B <- 1000
+set.seed(1)
+
+form_red  <- Shannon ~ Age + Gender + Depth
+form_full <- Shannon ~ Status + Age + Gender + Depth
+
+obs_coef <- sapply(taus, function(tau){
+  fit <- rq(form_full, data = meta_df, tau = tau)
+  unname(coef(fit)["StatusIHD"])
+})
+
+df_tau_coef <- data.frame(tau = taus, coef = obs_coef)
+
+perm_mat <- sapply(seq_along(taus), function(k){
+  tau <- taus[k]
+  
+  # reduced model: Y ~ Z
+  fit0 <- rq(form_red, data = meta_df, tau = tau)
+  yhat0 <- fitted(fit0)
+  e0 <- resid(fit0)
+  
+  # residual permutation + refit full
+  replicate(B, {
+    y_star <- yhat0 + sample(e0)    
+    df_star <- meta_df
+    df_star$Shannon <- y_star
+    
+    fit1 <- rq(form_full, data = df_star, tau = tau)
+    unname(coef(fit1)["StatusIHD"])
+  })
+})
+
+perm_mat <- t(perm_mat)  
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p1 <- ggplot() +
+  
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+  
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+
+p1
+
+taus <- c(0.1, 0.25, 0.5, 0.75, 0.9)
+B <- 1000
+set.seed(1)
+
+form_red  <- Shannon ~ Age + Gender + Depth
+form_full <- Shannon ~ Status + Age + Gender + Depth
+
+obs_coef <- sapply(taus, function(tau){
+  fit <- rq(form_full, data = meta_df, tau = tau)
+  unname(coef(fit)["StatusMMC"])
+})
+
+df_tau_coef <- data.frame(tau = taus, coef = obs_coef)
+
+perm_mat <- sapply(seq_along(taus), function(k){
+  tau <- taus[k]
+  
+  # reduced model: Y ~ Z
+  fit0 <- rq(form_red, data = meta_df, tau = tau)
+  yhat0 <- fitted(fit0)
+  e0 <- resid(fit0)
+  
+  # residual permutation + refit full
+  replicate(B, {
+    y_star <- yhat0 + sample(e0)    
+    df_star <- meta_df
+    df_star$Shannon <- y_star
+    
+    fit1 <- rq(form_full, data = df_star, tau = tau)
+    unname(coef(fit1)["StatusMMC"])
+  })
+})
+
+perm_mat <- t(perm_mat)  
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p2 <- ggplot() +
+  
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+  
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+
+p2
+```
+
 
 ### Part 4: Wasserstein Spectrum of BMI
 ```{r, warning=FALSE}
@@ -328,6 +826,172 @@ ggsave(
 
 
 
+```
+
+#### Negative Control
+
+```{r}
+B <- 1000
+set.seed(1)
+t_grid_show <- seq(0.1, 0.9, by = 0.1)
+meta_df$BMI..kg.m.. = as.numeric(meta_df$BMI..kg.m..)
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(BMI..kg.m..))
+
+models <- wasserstein_spectrum(
+  df = meta_df, 
+  feature_col = "Shannon", 
+  outcome_col = "BMI..kg.m..", 
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  alpha = 0.05,
+  B = 500,
+  joint = T,
+  plot = TRUE,
+  seed = 123
+)
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+
+
+perm_mat <- replicate(B, {
+  dfp <- meta_df
+  dfp$BMI..kg.m.. <- sample(dfp$BMI..kg.m..)  # permute HbA1c (break association)
+  fit <- wasserstein_spectrum(
+    df = dfp, 
+    feature_col = "Shannon", 
+    outcome_col = "BMI..kg.m..", 
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = t_grid_show,
+    alpha = 0.05,
+    B = 500,
+    joint = T,
+    plot = TRUE,
+    seed = NULL
+  )
+  fit$beta1
+})
+
+colnames(perm_mat) <- paste0("Rep_", seq_len(B))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- ggplot() +
+
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+
+p
+
+```
+
+
+```{r}
+taus <- c(0.1, 0.25, 0.5, 0.75, 0.9)
+B <- 1000
+set.seed(1)
+
+form_red  <- Shannon ~ Age + Gender + Depth
+form_full <- Shannon ~ BMI..kg.m.. + Age + Gender + Depth
+
+obs_coef <- sapply(taus, function(tau){
+  fit <- rq(form_full, data = meta_df, tau = tau)
+  unname(coef(fit)["BMI..kg.m.."])
+})
+
+df_tau_coef <- data.frame(tau = taus, coef = obs_coef)
+
+perm_mat <- sapply(seq_along(taus), function(k){
+  tau <- taus[k]
+  
+  # reduced model: Y ~ Z
+  fit0 <- rq(form_red, data = meta_df, tau = tau)
+  yhat0 <- fitted(fit0)
+  e0 <- resid(fit0)
+  
+  # residual permutation + refit full
+  replicate(B, {
+    y_star <- yhat0 + sample(e0)    
+    df_star <- meta_df
+    df_star$Shannon <- y_star
+    
+    fit1 <- rq(form_full, data = df_star, tau = tau)
+    unname(coef(fit1)["BMI..kg.m.."])
+  })
+})
+
+perm_mat <- t(perm_mat)  
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- ggplot() +
+  
+  geom_boxplot(
+    data = df_perm_long,
+    aes(x = factor(tau), y = coef_perm),
+    fill = "grey80",
+    color = "grey40",
+    outlier.shape = NA,   
+    width = 0.6
+  ) +
+  
+  geom_point(
+    data = df_tau_coef,
+    aes(x = factor(tau), y = coef),
+    color = "red",
+    shape = 4,   # x
+    size = 3,
+    stroke = 1.2
+  ) +
+  labs(
+    x = expression(tau),
+    y = "Coefficient",
+    title = "Negative Control Analysis"
+  ) +
+  theme_classic(base_size = 13)
+
+p
 ```
 
 ### Part 5: Wasserstein Spectrum of Waist.circumference
