@@ -192,47 +192,222 @@ ggsave(
 #### Negative Control
 
 ```{r}
+wasserstein_spectrum_nca <- function(df, 
+                                     feature_col, 
+                                     outcome_col, 
+                                     confounder_cols = NULL,
+                                     basis_df = 6,
+                                     t_grid = seq(0.01, 0.99, length.out = 100),
+                                     n_perm = 99,
+                                     seed = 123) {
+  
+  if (!is.null(seed)) set.seed(seed)
+  
+  # Extract data
+  y <- df[[feature_col]]
+  x <- df[[outcome_col]]
+  if (is.factor(x)) {
+    if (nlevels(x) != 2) stop("outcome_col must be binary or numeric.")
+    x <- as.numeric(x) - 1
+  } else if (!is.numeric(x)) {
+    stop("outcome_col must be numeric or a binary factor.")
+  }
+  conf_df <- if (!is.null(confounder_cols)) df[, confounder_cols, drop = FALSE] else NULL
+  
+  n <- nrow(df)
+  m <- length(t_grid)
+  
+  # Build quantile thresholds
+  quantile_thresholds <- quantile(y, probs = t_grid, type = 8)
+  
+  # Construct binary matrix: n x m, then flatten
+  y_bin_mat <- outer(y, quantile_thresholds, FUN = ">") * 1  # n x m
+  y_vec <- as.vector(y_bin_mat)
+  
+  # Full model design matrix (with x)
+  model_data <- data.frame(x = x)
+  if (!is.null(conf_df)) model_data <- cbind(model_data, conf_df)
+  X0 <- model.matrix(~ ., data = model_data)  # n x p
+  p <- ncol(X0)
+  
+  # Reduced model design matrix (without x)
+  model_data_red <- if (!is.null(conf_df)) conf_df else data.frame(intercept = rep(1, n))
+  X0_red <- model.matrix(~ ., data = model_data_red)  # n x p_red
+  
+  # B-spline basis on t_grid
+  Phi <- splines::bs(t_grid, df = basis_df, intercept = TRUE)  # m x K
+  K <- ncol(Phi)
+  
+  # Full model: fit and extract beta1(t)
+  X_big <- kronecker(Phi, X0)          # (n*m) x (p*K)
+  fit_full <- lm(y_vec ~ X_big - 1)
+  coef_hat <- coef(fit_full)
+  
+  idx_x <- which(colnames(X0) == "x")
+  if (length(idx_x) == 0) stop("Couldn't find predictor `x` in design matrix.")
+  sel_idx <- idx_x + (0:(K-1)) * p
+  
+  beta1_grid <- numeric(m)
+  for (j in 1:m) {
+    beta1_grid[j] <- sum(coef_hat[sel_idx] * Phi[j, ])
+  }
+  
+  # Reduced model: get fitted values and residuals
+  X_big_red <- kronecker(Phi, X0_red)  # (n*m) x (p_red*K)
+  fit_red <- lm(y_vec ~ X_big_red - 1)
+  fitted_red <- fitted(fit_red)        # length n*m
+  resid_red  <- residuals(fit_red)     # length n*m
+  
+  # Reshape residuals to n x m matrix for blocked permutation
+  resid_mat <- matrix(resid_red, nrow = n, ncol = m)  # n x m
+  
+  # Permutation: store beta1 for each permutation
+  perm_beta1 <- matrix(NA, nrow = n_perm, ncol = m)
+  
+  for (b in 1:n_perm) {
+    # Blocked permutation: permute rows (samples), keep columns (quantiles) intact
+    perm_idx <- sample(n)
+    resid_perm <- resid_mat[perm_idx, ]       # n x m, rows permuted
+    
+    # Reconstruct permuted y_vec
+    y_vec_perm <- fitted_red + as.vector(resid_perm)  # n*m
+    
+    # Fit full model on permuted response
+    fit_perm <- lm(y_vec_perm ~ X_big - 1)
+    coef_perm <- coef(fit_perm)
+    
+    for (j in 1:m) {
+      perm_beta1[b, j] <- sum(coef_perm[sel_idx] * Phi[j, ])
+    }
+  }
+  
+  return(list(
+    quantiles   = t_grid,
+    beta1       = beta1_grid,
+    perm_beta1  = perm_beta1   # n_perm x m matrix
+  ))
+}
+
+
+plot_nca <- function(result,
+                     alpha = 0.1,
+                     n_ticks = 10,
+                     title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+                     xlab = expression(tau),
+                     ylab = "Coefficient",
+                     box_color = "grey70",
+                     point_color = "red",
+                     point_shape = 4,
+                     point_size = 1.5,
+                     bound_color = "blue",
+                     bound_shape = 1,
+                     bound_size = 1.5) {
+  
+  t_grid     <- result$quantiles
+  beta1      <- result$beta1
+  perm_beta1 <- result$perm_beta1  # n_perm x m
+  
+  m <- length(t_grid)
+  
+  # Compute permutation quantile bounds at each quantile level
+  perm_lower <- apply(perm_beta1, 2, quantile, probs = alpha / 2)
+  perm_upper <- apply(perm_beta1, 2, quantile, probs = 1 - alpha / 2)
+  
+  # Build long data frame for boxplot (all quantile levels)
+  perm_long <- data.frame(
+    tau  = rep(t_grid, each = nrow(perm_beta1)),
+    coef = as.vector(perm_beta1)
+  )
+  perm_long$tau <- factor(perm_long$tau)
+  
+  # Observed beta and bounds at all quantile levels
+  obs_df <- data.frame(
+    tau   = factor(t_grid),
+    coef  = beta1,
+    lower = perm_lower,
+    upper = perm_upper
+  )
+  
+  # Select n_ticks evenly spaced levels for x-axis labels
+  tick_idx    <- round(seq(1, m, length.out = n_ticks))
+  tick_labels <- levels(perm_long$tau)
+  show_labels <- ifelse(
+    seq_along(tick_labels) %in% tick_idx,
+    round(t_grid, 2),
+    ""
+  )
+  
+  p <- ggplot(perm_long, aes(x = tau, y = coef)) +
+    geom_boxplot(
+      fill = box_color, color = "grey40",
+      outlier.shape = NA,
+      width = 0.6
+    ) +
+    geom_point(
+      data  = obs_df,
+      aes(x = tau, y = coef),
+      color = point_color,
+      shape = point_shape,
+      size  = point_size
+    ) +
+    geom_point(
+      data  = obs_df,
+      aes(x = tau, y = lower),
+      color = bound_color,
+      shape = bound_shape,
+      size  = bound_size
+    ) +
+    geom_point(
+      data  = obs_df,
+      aes(x = tau, y = upper),
+      color = bound_color,
+      shape = bound_shape,
+      size  = bound_size
+    ) +
+    scale_x_discrete(labels = show_labels) +
+    labs(
+      title = title,
+      x     = xlab,
+      y     = ylab
+    ) +
+    theme_classic(base_size = 13) +
+    theme(
+      plot.title   = element_text(hjust = 0.5, face = "bold", size = 13),
+      axis.title.x = element_text(size = 11, margin = margin(t = 6)),
+      axis.title.y = element_text(size = 11, margin = margin(r = 6)),
+      axis.text    = element_text(color = "black")
+    )
+  
+  return(p)
+}
+
+
 library(tidyverse)
+
 B <- 1000
 set.seed(1)
+
 t_grid_show <- seq(0.01, 0.99, length.out = 100)
-models <- wasserstein_spectrum(
-  df = meta_df, 
-  feature_col = "Shannon", 
-  outcome_col = "HbA1c", 
+
+models <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "HbA1c",
   confounder_cols = NULL,
   basis_df = 6,
   t_grid = t_grid_show,
-  alpha = 0.05,
-  plot = TRUE,
+  n_perm = B,
   seed = 123
 )
+
+# keep old-style objects if you still want them later
 df_tau_coef <- data.frame(
   tau  = models$quantiles,
   coef = models$beta1
 )
 
-HbA1c_seq <- seq(min(meta_df$HbA1c), max(meta_df$HbA1c), length.out = 100)
-pred_df <- data.frame(HbA1c = HbA1c_seq)
-
-perm_mat <- replicate(B, {
-  dfp <- meta_df
-  dfp$HbA1c <- sample(dfp$HbA1c)  # permute HbA1c (break association)
-  fit <- wasserstein_spectrum(
-    df = dfp, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = t_grid_show,
-    alpha = 0.05,
-    plot = TRUE,
-    seed = NULL
-  )
-  fit$beta1
-})
-
-colnames(perm_mat) <- paste0("Rep_", seq_len(B))
+perm_mat <- t(models$perm_beta1)   # now m x B, so rows match tau
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
 df_tau_coef <- cbind(df_tau_coef, perm_mat)
 
 df_perm_long <- df_tau_coef %>%
@@ -243,97 +418,77 @@ df_perm_long <- df_tau_coef %>%
     values_to = "coef_perm"
   )
 
-p <- ggplot() +
-
-  geom_boxplot(
-    data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
-    fill = "grey80",
-    color = "grey40",
-    outlier.shape = NA,   
-    width = 0.6
-  ) +
-
-  geom_point(
-    data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
-    color = "red",
-    shape = 4,   # x
-    size = 3,
-    stroke = 1.2
-  ) +
-  labs(
-    x = expression(tau),
-    y = "Coefficient",
-    title = "Negative Control Analysis"
-  ) +
-  theme_classic(base_size = 13)
-tau_levels <- levels(factor(df_perm_long$tau))
-idx_10 <- unique(round(seq(1, length(tau_levels), length.out = 10)))
-breaks_10 <- tau_levels[idx_10]
-
-p <- p +
-  scale_x_discrete(
-    breaks = breaks_10,
-    labels = function(x) formatC(as.numeric(as.character(x)), format = "f", digits = 5)
-  ) +
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
   )
 
 p
 
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "HbA1c_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
 ```
 
 
 ```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
 B <- 1000
 set.seed(1)
-t_grid_show <- seq(0.1, 0.9, by = 0.1)
-models <- wasserstein_spectrum(
-  df = meta_df, 
-  feature_col = "Shannon", 
-  outcome_col = "HbA1c", 
-  confounder_cols = c("Depth","Age","Gender"),
+
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "HbA1c",
+  confounder_cols = c("Depth", "Age", "Gender"),
   basis_df = 6,
-  t_grid = t_grid_show,
-  alpha = 0.05,
-  B = 500,
-  joint = T,
-  plot = TRUE,
+  t_grid = taus,
+  n_perm = B,
   seed = 123
 )
+
+# Keep an observed coefficient data frame
 df_tau_coef <- data.frame(
-  tau  = models$quantiles,
-  coef = models$beta1
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
 )
 
-HbA1c_seq <- seq(min(meta_df$HbA1c), max(meta_df$HbA1c), length.out = 100)
-pred_df <- data.frame(HbA1c = HbA1c_seq)
+# Convert permutation matrix to old-style format:
+# perm_beta1 is n_perm x n_tau, so transpose to n_tau x n_perm
+perm_mat <- t(obs_model$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
 
-perm_mat <- replicate(B, {
-  dfp <- meta_df
-  dfp$HbA1c <- sample(dfp$HbA1c)  # permute HbA1c (break association)
-  fit <- wasserstein_spectrum(
-    df = dfp, 
-    feature_col = "Shannon", 
-    outcome_col = "HbA1c", 
-    confounder_cols = c("Depth","Age","Gender"),
-    basis_df = 6,
-    t_grid = t_grid_show,
-    alpha = 0.05,
-    B = 500,
-    joint = T,
-    plot = TRUE,
-    seed = NULL
-  )
-  fit$beta1
-})
+# Bind observed and permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
 
-colnames(perm_mat) <- paste0("Rep_", seq_len(B))
-df_tau_coef <- cbind(df_tau_coef, perm_mat)
-
-df_perm_long <- df_tau_coef %>%
+# Long format for any downstream use
+df_perm_long <- df_final %>%
   select(tau, starts_with("Rep_")) %>%
   pivot_longer(
     cols = starts_with("Rep_"),
@@ -341,34 +496,38 @@ df_perm_long <- df_tau_coef %>%
     values_to = "coef_perm"
   )
 
-p <- ggplot() +
+# Plot using the new plotting function
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (HbA1c)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 
-  geom_boxplot(
-    data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
-    fill = "grey80",
-    color = "grey40",
-    outlier.shape = NA,   
-    width = 0.6
-  ) +
+print(p)
 
-  geom_point(
-    data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
-    color = "red",
-    shape = 4,   # x
-    size = 3,
-    stroke = 1.2
-  ) +
-  labs(
-    x = expression(tau),
-    y = "Coefficient",
-    title = "Negative Control Analysis"
-  ) +
-  theme_classic(base_size = 13)
+# Save figure
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
 
-p
-
+ggplot2::ggsave(
+  filename = file.path("figures", "HbA1c_NegativeControl_Confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
 
 ```
 
@@ -433,10 +592,14 @@ Status.ws3$plot
 #### Negative Control
 
 ```{r}
+library(tidyverse)
 B <- 1000
 set.seed(1)
-t_grid_show <- seq(0.1, 0.9, by = 0.1)
-models <-wasserstein_spectrum_multiclass(
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+# observed fit
+fit_obs <- wasserstein_spectrum_multiclass(
   df = meta_df,
   feature_col = "Shannon",
   outcome_col = "Status",
@@ -448,30 +611,33 @@ models <-wasserstein_spectrum_multiclass(
   plot = TRUE,
   seed = 123
 )
+
 df_tau_coef <- data.frame(
-  tau  = models$quantiles,
-  coef = models$beta[1,]
+  tau  = fit_obs$quantiles,
+  coef = fit_obs$beta[1,]
 )
 
-#HbA1c_seq <- seq(min(meta_df$Status), max(meta_df$Status), length.out = 100)
-#pred_df <- data.frame(Status = HbA1c_seq)
-
+# permutation null
+status_levels <- levels(as.factor(meta_df$Status))
 perm_mat <- replicate(B, {
   dfp <- meta_df
-  dfp$Status <- sample(dfp$Status)  # permute HbA1c (break association)
-  fit <- wasserstein_spectrum_multiclass(
-  df = dfp,
-  feature_col = "Shannon",
-  outcome_col = "Status",
-  reference_level = "IHD",
-  confounder_cols = NULL,
-  basis_df = 6,
-  t_grid = t_grid_show,
-  alpha = 0.05,
-  plot = TRUE,
-  seed = NULL
-)
-  fit$beta[1,]
+  dfp$Status <- factor(sample(as.character(dfp$Status)),
+                       levels = status_levels)
+
+  fit_p <- wasserstein_spectrum_multiclass(
+    df = dfp,
+    feature_col = "Shannon",
+    outcome_col = "Status",
+    reference_level = "IHD",
+    confounder_cols = NULL,
+    basis_df = 6,
+    t_grid = t_grid_show,
+    alpha = 0.05,
+    plot = FALSE,
+    seed = NULL   # or set a per-rep seed if needed
+  )
+
+  fit_p$beta[1,]
 })
 
 colnames(perm_mat) <- paste0("Rep_", seq_len(B))
@@ -485,263 +651,180 @@ df_perm_long <- df_tau_coef %>%
     values_to = "coef_perm"
   )
 
+# 1) Define ordered tau levels (numeric) and choose 10 to label
+tau_levels <- sort(unique(df_perm_long$tau))
+idx_10 <- unique(round(seq(1, length(tau_levels), length.out = 10)))
+lab_levels <- tau_levels[idx_10]
+
+# 2) Plot: all boxplots, but only 10 x-axis labels
 p1 <- ggplot() +
-
   geom_boxplot(
     data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
+    aes(x = factor(tau, levels = tau_levels), y = coef_perm),
     fill = "grey80",
     color = "grey40",
-    outlier.shape = NA,   
+    outlier.shape = NA,
     width = 0.6
   ) +
-
   geom_point(
     data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
+    aes(x = factor(tau, levels = tau_levels), y = coef),
     color = "red",
-    shape = 4,   # x
+    shape = 4,
     size = 3,
     stroke = 1.2
+  ) +
+  scale_x_discrete(
+    breaks = as.character(lab_levels),
+    labels = function(x) sprintf("%.2f", as.numeric(x))
   ) +
   labs(
     x = expression(tau),
     y = "Coefficient",
     title = "Negative Control Analysis"
   ) +
-  theme_classic(base_size = 13)
+  theme_classic(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-p1
+print(p1)
 
-B <- 1000
-set.seed(1)
-t_grid_show <- seq(0.1, 0.9, by = 0.1)
-models <-wasserstein_spectrum_multiclass(
-  df = meta_df,
-  feature_col = "Shannon",
-  outcome_col = "Status",
-  reference_level = "IHD",
-  confounder_cols = "Depth",
-  basis_df = 6,
-  t_grid = t_grid_show,
-  alpha = 0.05,
-  plot = TRUE,
-  seed = 123
-)
-df_tau_coef <- data.frame(
-  tau  = models$quantiles,
-  coef = models$beta[2,]
-)
-
-#HbA1c_seq <- seq(min(meta_df$Status), max(meta_df$Status), length.out = 100)
-#pred_df <- data.frame(Status = HbA1c_seq)
-
-perm_mat <- replicate(B, {
-  dfp <- meta_df
-  dfp$Status <- sample(dfp$Status)  # permute HbA1c (break association)
-  fit <- wasserstein_spectrum_multiclass(
-  df = dfp,
-  feature_col = "Shannon",
-  outcome_col = "Status",
-  reference_level = "IHD",
-  confounder_cols = "Depth",
-  basis_df = 6,
-  t_grid = t_grid_show,
-  alpha = 0.05,
-  plot = TRUE,
-  seed = NULL
-)
-  fit$beta[2,]
-})
-
-colnames(perm_mat) <- paste0("Rep_", seq_len(B))
-df_tau_coef <- cbind(df_tau_coef, perm_mat)
-
-df_perm_long <- df_tau_coef %>%
-  select(tau, starts_with("Rep_")) %>%
-  pivot_longer(
-    cols = starts_with("Rep_"),
-    names_to = "Rep",
-    values_to = "coef_perm"
+ggplot2::ggsave(
+    filename = file.path("figures", "Status_NegativeControl.png"),
+    plot = p1,
+    width = 8, height = 6, units = "in",
+    dpi = 300,
+    bg = "white"
   )
-
-p2 <- ggplot() +
-
-  geom_boxplot(
-    data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
-    fill = "grey80",
-    color = "grey40",
-    outlier.shape = NA,   
-    width = 0.6
-  ) +
-
-  geom_point(
-    data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
-    color = "red",
-    shape = 4,   # x
-    size = 3,
-    stroke = 1.2
-  ) +
-  labs(
-    x = expression(tau),
-    y = "Coefficient",
-    title = "Negative Control Analysis"
-  ) +
-  theme_classic(base_size = 13)
-
-p2
-
 ```
 
 
 ```{r}
-taus <- c(0.1, 0.25, 0.5, 0.75, 0.9)
+library(quantreg)
+library(tidyverse)
+
+taus <- seq(0.01, 0.99, length.out = 100)
 B <- 1000
 set.seed(1)
+
+# Ensure IHD is the reference
+meta_df <- meta_df %>%
+  mutate(Status = relevel(factor(Status), ref = "IHD"))
 
 form_red  <- Shannon ~ Age + Gender + Depth
 form_full <- Shannon ~ Status + Age + Gender + Depth
 
-obs_coef <- sapply(taus, function(tau){
-  fit <- rq(form_full, data = meta_df, tau = tau)
-  unname(coef(fit)["StatusIHD"])
-})
+# Helper: extract coefficient for a specific contrast (e.g., "HC" or "MMC")
+get_contrast_coef <- function(fit, contrast_level) {
+  nm <- paste0("Status", contrast_level)
+  b <- coef(fit)
+  if (!nm %in% names(b)) {
+    stop("Coefficient ", nm, " not found. Available Status terms: ",
+         paste(grep("^Status", names(b), value = TRUE), collapse = ", "))
+  }
+  unname(b[nm])
+}
 
-df_tau_coef <- data.frame(tau = taus, coef = obs_coef)
+run_freedman_lane_qr <- function(contrast_level, taus, B, meta_df, form_red, form_full) {
 
-perm_mat <- sapply(seq_along(taus), function(k){
-  tau <- taus[k]
-  
-  # reduced model: Y ~ Z
-  fit0 <- rq(form_red, data = meta_df, tau = tau)
-  yhat0 <- fitted(fit0)
-  e0 <- resid(fit0)
-  
-  # residual permutation + refit full
-  replicate(B, {
-    y_star <- yhat0 + sample(e0)    
-    df_star <- meta_df
-    df_star$Shannon <- y_star
-    
-    fit1 <- rq(form_full, data = df_star, tau = tau)
-    unname(coef(fit1)["StatusIHD"])
+  # Observed coefficients
+  obs_coef <- sapply(taus, function(tau) {
+    fit <- rq(form_full, data = meta_df, tau = tau)
+    get_contrast_coef(fit, contrast_level)
   })
-})
+  df_tau_coef <- data.frame(tau = taus, coef = obs_coef)
 
-perm_mat <- t(perm_mat)  
-colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
-df_tau_coef <- cbind(df_tau_coef, perm_mat)
+  # Permutation matrix: n_tau x B
+  perm_mat <- sapply(seq_along(taus), function(k) {
+    tau <- taus[k]
 
-df_perm_long <- df_tau_coef %>%
-  select(tau, starts_with("Rep_")) %>%
-  pivot_longer(
-    cols = starts_with("Rep_"),
-    names_to = "Rep",
-    values_to = "coef_perm"
-  )
+    fit0  <- rq(form_red, data = meta_df, tau = tau)
+    yhat0 <- fitted(fit0)
+    e0    <- resid(fit0)
 
-p1 <- ggplot() +
-  
-  geom_boxplot(
-    data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
-    fill = "grey80",
-    color = "grey40",
-    outlier.shape = NA,   
-    width = 0.6
-  ) +
-  
-  geom_point(
-    data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
-    color = "red",
-    shape = 4,   # x
-    size = 3,
-    stroke = 1.2
-  ) +
-  labs(
-    x = expression(tau),
-    y = "Coefficient",
-    title = "Negative Control Analysis"
-  ) +
-  theme_classic(base_size = 13)
+    replicate(B, {
+      y_star <- yhat0 + sample(e0)
+      df_star <- meta_df
+      df_star$Shannon <- y_star
 
-p1
-
-taus <- c(0.1, 0.25, 0.5, 0.75, 0.9)
-B <- 1000
-set.seed(1)
-
-form_red  <- Shannon ~ Age + Gender + Depth
-form_full <- Shannon ~ Status + Age + Gender + Depth
-
-obs_coef <- sapply(taus, function(tau){
-  fit <- rq(form_full, data = meta_df, tau = tau)
-  unname(coef(fit)["StatusMMC"])
-})
-
-df_tau_coef <- data.frame(tau = taus, coef = obs_coef)
-
-perm_mat <- sapply(seq_along(taus), function(k){
-  tau <- taus[k]
-  
-  # reduced model: Y ~ Z
-  fit0 <- rq(form_red, data = meta_df, tau = tau)
-  yhat0 <- fitted(fit0)
-  e0 <- resid(fit0)
-  
-  # residual permutation + refit full
-  replicate(B, {
-    y_star <- yhat0 + sample(e0)    
-    df_star <- meta_df
-    df_star$Shannon <- y_star
-    
-    fit1 <- rq(form_full, data = df_star, tau = tau)
-    unname(coef(fit1)["StatusMMC"])
+      fit1 <- rq(form_full, data = df_star, tau = tau)
+      get_contrast_coef(fit1, contrast_level)
+    })
   })
-})
 
-perm_mat <- t(perm_mat)  
-colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
-df_tau_coef <- cbind(df_tau_coef, perm_mat)
+  perm_mat <- t(perm_mat)
+  colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
 
-df_perm_long <- df_tau_coef %>%
-  select(tau, starts_with("Rep_")) %>%
-  pivot_longer(
-    cols = starts_with("Rep_"),
-    names_to = "Rep",
-    values_to = "coef_perm"
+  df_final <- cbind(df_tau_coef, perm_mat)
+
+  df_perm_long <- df_final %>%
+    select(tau, starts_with("Rep_")) %>%
+    pivot_longer(
+      cols = starts_with("Rep_"),
+      names_to = "Rep",
+      values_to = "coef_perm"
+    )
+
+  # Only show 10 tau labels
+  tau_levels <- sort(unique(df_perm_long$tau))
+  idx_10 <- unique(round(seq(1, length(tau_levels), length.out = 10)))
+  lab_levels <- tau_levels[idx_10]
+
+  p <- ggplot() +
+    geom_boxplot(
+      data = df_perm_long,
+      aes(x = factor(tau, levels = tau_levels), y = coef_perm),
+      fill = "grey80",
+      color = "grey40",
+      outlier.shape = NA,
+      width = 0.6
+    ) +
+    geom_point(
+      data = df_final,
+      aes(x = factor(tau, levels = tau_levels), y = coef),
+      color = "red",
+      shape = 4,
+      size = 3,
+      stroke = 1.2
+    ) +
+    scale_x_discrete(
+      breaks = as.character(lab_levels),
+      labels = function(x) sprintf("%.2f", as.numeric(x))
+    ) +
+    labs(
+      x = expression(tau),
+      y = "Coefficient",
+      title = paste0("Negative Control Analysis (Freedman–Lane): ", contrast_level, " vs IHD")
+    ) +
+    theme_classic(base_size = 13) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  list(df_final = df_final, df_perm_long = df_perm_long, plot = p)
+}
+
+# Run for HC and MMC
+res_HC  <- run_freedman_lane_qr("HC",  taus, B, meta_df, form_red, form_full)
+res_MMC <- run_freedman_lane_qr("MMC", taus, B, meta_df, form_red, form_full)
+
+p1 <- res_HC$plot
+p2 <- res_MMC$plot
+
+print(p1)
+print(p2)
+
+ggplot2::ggsave(
+    filename = file.path("figures", "Status_NegativeControl_ConfounderHC.png"),
+    plot = p1,
+    width = 8, height = 6, units = "in",
+    dpi = 300,
+    bg = "white"
   )
-
-p2 <- ggplot() +
-  
-  geom_boxplot(
-    data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
-    fill = "grey80",
-    color = "grey40",
-    outlier.shape = NA,   
-    width = 0.6
-  ) +
-  
-  geom_point(
-    data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
-    color = "red",
-    shape = 4,   # x
-    size = 3,
-    stroke = 1.2
-  ) +
-  labs(
-    x = expression(tau),
-    y = "Coefficient",
-    title = "Negative Control Analysis"
-  ) +
-  theme_classic(base_size = 13)
-
-p2
+ggplot2::ggsave(
+    filename = file.path("figures", "Status_NegativeControl_ConfounderMMC.png"),
+    plot = p2,
+    width = 8, height = 6, units = "in",
+    dpi = 300,
+    bg = "white"
+  )
 ```
 
 
@@ -831,55 +914,46 @@ ggsave(
 #### Negative Control
 
 ```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
 B <- 1000
 set.seed(1)
-t_grid_show <- seq(0.1, 0.9, by = 0.1)
-meta_df$BMI..kg.m.. = as.numeric(meta_df$BMI..kg.m..)
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+# Make sure BMI is numeric and remove missing values
+meta_df$BMI..kg.m.. <- as.numeric(meta_df$BMI..kg.m..)
 meta_df <- meta_df %>%
   dplyr::filter(!is.na(BMI..kg.m..))
 
-models <- wasserstein_spectrum(
-  df = meta_df, 
-  feature_col = "Shannon", 
-  outcome_col = "BMI..kg.m..", 
+# Run the new NCA model
+models <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "BMI..kg.m..",
   confounder_cols = NULL,
   basis_df = 6,
   t_grid = t_grid_show,
-  alpha = 0.05,
-  B = 500,
-  joint = T,
-  plot = TRUE,
+  n_perm = B,
   seed = 123
 )
+
+# Keep old-style observed coefficient data frame
 df_tau_coef <- data.frame(
   tau  = models$quantiles,
   coef = models$beta1
 )
 
+# Convert permutation matrix to old-style format
+# models$perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(models$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
 
-
-perm_mat <- replicate(B, {
-  dfp <- meta_df
-  dfp$BMI..kg.m.. <- sample(dfp$BMI..kg.m..)  # permute HbA1c (break association)
-  fit <- wasserstein_spectrum(
-    df = dfp, 
-    feature_col = "Shannon", 
-    outcome_col = "BMI..kg.m..", 
-    confounder_cols = NULL,
-    basis_df = 6,
-    t_grid = t_grid_show,
-    alpha = 0.05,
-    B = 500,
-    joint = T,
-    plot = TRUE,
-    seed = NULL
-  )
-  fit$beta1
-})
-
-colnames(perm_mat) <- paste0("Rep_", seq_len(B))
 df_tau_coef <- cbind(df_tau_coef, perm_mat)
 
+# Long format, same as your previous workflow
 df_perm_long <- df_tau_coef %>%
   select(tau, starts_with("Rep_")) %>%
   pivot_longer(
@@ -888,76 +962,84 @@ df_perm_long <- df_tau_coef %>%
     values_to = "coef_perm"
   )
 
-p <- ggplot() +
-
-  geom_boxplot(
-    data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
-    fill = "grey80",
-    color = "grey40",
-    outlier.shape = NA,   
-    width = 0.6
-  ) +
-
-  geom_point(
-    data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
-    color = "red",
-    shape = 4,   # x
-    size = 3,
-    stroke = 1.2
-  ) +
-  labs(
-    x = expression(tau),
-    y = "Coefficient",
-    title = "Negative Control Analysis"
-  ) +
-  theme_classic(base_size = 13)
+# Plot using the new plotting function
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
 
 p
 
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "BMI_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
 ```
 
 
 ```{r}
-taus <- c(0.1, 0.25, 0.5, 0.75, 0.9)
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
 B <- 1000
 set.seed(1)
 
-form_red  <- Shannon ~ Age + Gender + Depth
-form_full <- Shannon ~ BMI..kg.m.. + Age + Gender + Depth
+# Make sure BMI is numeric and remove missing values
+meta_df$BMI..kg.m.. <- as.numeric(meta_df$BMI..kg.m..)
 
-obs_coef <- sapply(taus, function(tau){
-  fit <- rq(form_full, data = meta_df, tau = tau)
-  unname(coef(fit)["BMI..kg.m.."])
-})
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(BMI..kg.m..))
 
-df_tau_coef <- data.frame(tau = taus, coef = obs_coef)
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "BMI..kg.m..",
+  confounder_cols = c("Depth", "Age", "Gender"),
+  basis_df = 6,
+  t_grid = taus,
+  n_perm = B,
+  seed = 123
+)
 
-perm_mat <- sapply(seq_along(taus), function(k){
-  tau <- taus[k]
-  
-  # reduced model: Y ~ Z
-  fit0 <- rq(form_red, data = meta_df, tau = tau)
-  yhat0 <- fitted(fit0)
-  e0 <- resid(fit0)
-  
-  # residual permutation + refit full
-  replicate(B, {
-    y_star <- yhat0 + sample(e0)    
-    df_star <- meta_df
-    df_star$Shannon <- y_star
-    
-    fit1 <- rq(form_full, data = df_star, tau = tau)
-    unname(coef(fit1)["BMI..kg.m.."])
-  })
-})
+# Observed coefficients
+df_tau_coef <- data.frame(
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
+)
 
-perm_mat <- t(perm_mat)  
+# Convert permutation matrix to old-style format
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(obs_model$perm_beta1)
 colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
-df_tau_coef <- cbind(df_tau_coef, perm_mat)
 
-df_perm_long <- df_tau_coef %>%
+# Bind observed coefficients with permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
+
+# Pivot to long format for any downstream use
+df_perm_long <- df_final %>%
   select(tau, starts_with("Rep_")) %>%
   pivot_longer(
     cols = starts_with("Rep_"),
@@ -965,33 +1047,37 @@ df_perm_long <- df_tau_coef %>%
     values_to = "coef_perm"
   )
 
-p <- ggplot() +
-  
-  geom_boxplot(
-    data = df_perm_long,
-    aes(x = factor(tau), y = coef_perm),
-    fill = "grey80",
-    color = "grey40",
-    outlier.shape = NA,   
-    width = 0.6
-  ) +
-  
-  geom_point(
-    data = df_tau_coef,
-    aes(x = factor(tau), y = coef),
-    color = "red",
-    shape = 4,   # x
-    size = 3,
-    stroke = 1.2
-  ) +
-  labs(
-    x = expression(tau),
-    y = "Coefficient",
-    title = "Negative Control Analysis"
-  ) +
-  theme_classic(base_size = 13)
+# Plot
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (BMI)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 
-p
+print(p)
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "BMI_NegativeControl_confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
 ```
 
 ### Part 5: Wasserstein Spectrum of Waist.circumference
@@ -1214,6 +1300,172 @@ ggsave(
 
 ```
 
+#### Negative Control
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+B <- 1000
+set.seed(1)
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+meta_df$Fasting.plasma.pro.ANP..pmol.L. <- as.numeric(meta_df$Fasting.plasma.pro.ANP..pmol.L.)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Fasting.plasma.pro.ANP..pmol.L.))
+
+models <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  n_perm = B,
+  seed = 123
+)
+
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(models$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
+
+p
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "proANP_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
+B <- 1000
+set.seed(1)
+
+# Make sure outcome is numeric and remove missing values
+meta_df$Fasting.plasma.pro.ANP..pmol.L. <- as.numeric(
+  meta_df$Fasting.plasma.pro.ANP..pmol.L.
+)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Fasting.plasma.pro.ANP..pmol.L.))
+
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Fasting.plasma.pro.ANP..pmol.L.",
+  confounder_cols = c("Depth", "Age", "Gender"),
+  basis_df = 6,
+  t_grid = taus,
+  n_perm = B,
+  seed = 123
+)
+
+# Observed coefficients
+df_tau_coef <- data.frame(
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
+)
+
+# Convert permutation matrix to old-style format
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(obs_model$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+# Bind observed coefficients with permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
+
+# Pivot to long format for any downstream use
+df_perm_long <- df_final %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+# Plot
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (proANP)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+print(p)
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "proANP_NegativeControl_confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+
 ### Part 8: Wasserstein Spectrum of SBP
 ```{r, warning=FALSE}
 shannon_by_status <- list()
@@ -1296,6 +1548,172 @@ ggsave(
 
 ```
 
+
+#### Negative Control
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+B <- 1000
+set.seed(1)
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+meta_df$Systolic.blood.pressure..mmHg. <- as.numeric(meta_df$Systolic.blood.pressure..mmHg.)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Systolic.blood.pressure..mmHg.))
+
+models <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Systolic.blood.pressure..mmHg.",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  n_perm = B,
+  seed = 123
+)
+
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(models$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
+
+p
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "SBP_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
+B <- 1000
+set.seed(1)
+
+# Make sure outcome is numeric and remove missing values
+meta_df$Systolic.blood.pressure..mmHg. <- as.numeric(
+  meta_df$Systolic.blood.pressure..mmHg.
+)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Systolic.blood.pressure..mmHg.))
+
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Systolic.blood.pressure..mmHg.",
+  confounder_cols = c("Depth", "Age", "Gender"),
+  basis_df = 6,
+  t_grid = taus,
+  n_perm = B,
+  seed = 123
+)
+
+# Observed coefficients
+df_tau_coef <- data.frame(
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
+)
+
+# Convert permutation matrix to old-style format
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(obs_model$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+# Bind observed coefficients with permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
+
+# Pivot to long format for any downstream use
+df_perm_long <- df_final %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+# Plot
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (SBP)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+print(p)
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "SBP_NegativeControl_confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
 ### Part 9: Wasserstein Spectrum of DBP
 ```{r, warning=FALSE}
 shannon_by_status <- list()
@@ -1376,6 +1794,174 @@ ggsave(
 
 ```
 
+
+#### Negative Control
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+B <- 1000
+set.seed(1)
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+meta_df$Diastolic.blood.pressure..mmHg. <- as.numeric(meta_df$Diastolic.blood.pressure..mmHg.)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Diastolic.blood.pressure..mmHg.))
+
+models <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Diastolic.blood.pressure..mmHg.",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  n_perm = B,
+  seed = 123
+)
+
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(models$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
+
+p
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "DBP_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
+B <- 1000
+set.seed(1)
+
+# Make sure outcome is numeric and remove missing values
+meta_df$Diastolic.blood.pressure..mmHg. <- as.numeric(
+  meta_df$Diastolic.blood.pressure..mmHg.
+)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Diastolic.blood.pressure..mmHg.))
+
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Diastolic.blood.pressure..mmHg.",
+  confounder_cols = c("Depth", "Age", "Gender"),
+  basis_df = 6,
+  t_grid = taus,
+  n_perm = B,
+  seed = 123
+)
+
+# Observed coefficients
+df_tau_coef <- data.frame(
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
+)
+
+# Convert permutation matrix to old-style format
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(obs_model$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+# Bind observed coefficients with permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
+
+# Pivot to long format for any downstream use
+df_perm_long <- df_final %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+# Plot
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (DBP)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+print(p)
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "DBP_NegativeControl_confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+
+
 ### Part 10: Wasserstein Spectrum of Left.ventricular
 ```{r, warning=FALSE}
 shannon_by_status <- list()
@@ -1455,6 +2041,175 @@ ggsave(
 })
 
 ```
+
+#### Negative Control
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+B <- 1000
+set.seed(1)
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+meta_df$Left.ventricular.ejection.fraction.... <- as.numeric(
+  meta_df$Left.ventricular.ejection.fraction....
+)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Left.ventricular.ejection.fraction....))
+
+models <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Left.ventricular.ejection.fraction....",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  n_perm = B,
+  seed = 123
+)
+
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(models$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
+
+p
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "LeftVentricu_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
+B <- 1000
+set.seed(1)
+
+# Make sure outcome is numeric and remove missing values
+meta_df$Left.ventricular.ejection.fraction.... <- as.numeric(
+  meta_df$Left.ventricular.ejection.fraction....
+)
+
+meta_df <- meta_df %>%
+  dplyr::filter(!is.na(Left.ventricular.ejection.fraction....))
+
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = meta_df,
+  feature_col = "Shannon",
+  outcome_col = "Left.ventricular.ejection.fraction....",
+  confounder_cols = c("Depth", "Age", "Gender"),
+  basis_df = 6,
+  t_grid = taus,
+  n_perm = B,
+  seed = 123
+)
+
+# Observed coefficients
+df_tau_coef <- data.frame(
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
+)
+
+# Convert permutation matrix to old-style format
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(obs_model$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+# Bind observed coefficients with permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
+
+# Pivot to long format for any downstream use
+df_perm_long <- df_final %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+# Plot
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (Left Ventricular Ejection Fraction)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+print(p)
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "LeftVentricu_NegativeControl_confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
 
 ### Part 11: Wasserstein Spectrum of adiponectin
 ```{r, warning=FALSE}
@@ -1537,6 +2292,174 @@ ggsave(
 
 ```
 
+#### Negative Control
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+B <- 1000
+set.seed(1)
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+# Work on a local copy so meta_df is not modified
+df_use <- meta_df %>%
+  mutate(
+    Fasting.plasma.adiponectin..mg.L. =
+      as.numeric(as.character(Fasting.plasma.adiponectin..mg.L.))
+  ) %>%
+  filter(!is.na(Fasting.plasma.adiponectin..mg.L.))
+
+models <- wasserstein_spectrum_nca(
+  df = df_use,
+  feature_col = "Shannon",
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  n_perm = B,
+  seed = 123
+)
+
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(models$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
+
+p
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "Adiponectin_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
+B <- 1000
+set.seed(1)
+
+# Work on a local copy so meta_df is not modified
+df_use <- meta_df %>%
+  mutate(
+    Fasting.plasma.adiponectin..mg.L. =
+      as.numeric(as.character(Fasting.plasma.adiponectin..mg.L.))
+  ) %>%
+  filter(!is.na(Fasting.plasma.adiponectin..mg.L.))
+
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = df_use,
+  feature_col = "Shannon",
+  outcome_col = "Fasting.plasma.adiponectin..mg.L.",
+  confounder_cols = c("Depth", "Age", "Gender"),
+  basis_df = 6,
+  t_grid = taus,
+  n_perm = B,
+  seed = 123
+)
+
+# Observed coefficients
+df_tau_coef <- data.frame(
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
+)
+
+# Convert permutation matrix to old-style format
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(obs_model$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+# Bind observed coefficients with permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
+
+# Pivot to long format for any downstream use
+df_perm_long <- df_final %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+# Plot
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (Adiponectin)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+print(p)
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "Adiponectin_NegativeControl_confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
 
 ### Part 12: Wasserstein Spectrum of triglycerides
 ```{r, warning=FALSE}
@@ -1619,7 +2542,174 @@ ggsave(
 
 ```
 
+#### Negative Control
 
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+B <- 1000
+set.seed(1)
+
+t_grid_show <- seq(0.01, 0.99, length.out = 100)
+
+# Work on a local copy so meta_df is not modified
+df_use <- meta_df %>%
+  mutate(
+    Fasting.plasma.triglycerides..mmol.L. =
+      as.numeric(as.character(Fasting.plasma.triglycerides..mmol.L.))
+  ) %>%
+  filter(!is.na(Fasting.plasma.triglycerides..mmol.L.))
+
+models <- wasserstein_spectrum_nca(
+  df = df_use,
+  feature_col = "Shannon",
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.",
+  confounder_cols = NULL,
+  basis_df = 6,
+  t_grid = t_grid_show,
+  n_perm = B,
+  seed = 123
+)
+
+df_tau_coef <- data.frame(
+  tau  = models$quantiles,
+  coef = models$beta1
+)
+
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(models$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+df_tau_coef <- cbind(df_tau_coef, perm_mat)
+
+df_perm_long <- df_tau_coef %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+p <- plot_nca(
+  result = models,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis",
+  xlab = expression(tau),
+  ylab = "Coefficient",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
+
+p
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "Triglycerides_NegativeControl.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
+
+
+```{r}
+# assumes wasserstein_spectrum_nca() and plot_nca() are already defined above
+
+library(tidyverse)
+
+# Define grid and number of permutations
+taus <- seq(0.01, 0.99, length.out = 100)
+B <- 1000
+set.seed(1)
+
+# Work on a local copy so meta_df is not modified
+df_use <- meta_df %>%
+  mutate(
+    Fasting.plasma.triglycerides..mmol.L. =
+      as.numeric(as.character(Fasting.plasma.triglycerides..mmol.L.))
+  ) %>%
+  filter(!is.na(Fasting.plasma.triglycerides..mmol.L.))
+
+# Run the new NCA model with confounder adjustment
+obs_model <- wasserstein_spectrum_nca(
+  df = df_use,
+  feature_col = "Shannon",
+  outcome_col = "Fasting.plasma.triglycerides..mmol.L.",
+  confounder_cols = c("Depth", "Age", "Gender"),
+  basis_df = 6,
+  t_grid = taus,
+  n_perm = B,
+  seed = 123
+)
+
+# Observed coefficients
+df_tau_coef <- data.frame(
+  tau  = obs_model$quantiles,
+  coef = obs_model$beta1
+)
+
+# Convert permutation matrix to old-style format
+# perm_beta1 is B x m, so transpose to m x B
+perm_mat <- t(obs_model$perm_beta1)
+colnames(perm_mat) <- paste0("Rep_", seq_len(ncol(perm_mat)))
+
+# Bind observed coefficients with permuted coefficients
+df_final <- cbind(df_tau_coef, perm_mat)
+
+# Pivot to long format for any downstream use
+df_perm_long <- df_final %>%
+  select(tau, starts_with("Rep_")) %>%
+  pivot_longer(
+    cols = starts_with("Rep_"),
+    names_to = "Rep",
+    values_to = "coef_perm"
+  )
+
+# Plot
+p <- plot_nca(
+  result = obs_model,
+  alpha = 0.05,
+  n_ticks = 10,
+  title = "Negative Control Analysis (Blocked Freedman-Lane Permutation)",
+  xlab = expression(tau),
+  ylab = "Coefficient (Triglycerides)",
+  box_color = "grey80",
+  point_color = "red",
+  point_shape = 4,
+  point_size = 3,
+  bound_color = "blue",
+  bound_shape = 1,
+  bound_size = 1.5
+) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+print(p)
+
+dir.create("figures", showWarnings = FALSE, recursive = TRUE)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "Triglycerides_NegativeControl_confounder.png"),
+  plot = p,
+  width = 8, height = 6, units = "in",
+  dpi = 300,
+  bg = "white"
+)
+```
 
 ## Faith's PD
 
